@@ -97,15 +97,15 @@ const Upload = () => {
                         <form id="upload-form" onSubmit={handleSubmit} className="flex flex-col gap-4 mt-8">
                             <div className="form-div">
                                 <label htmlFor="company-name">Company Name</label>
-                                <input type="text" name="company-name" placeholder="Company Name" id="company-name" />
+                                <input type="text" name="company-name" placeholder="Company Name" id="company-name" className="focus:border border-green-300" />
                             </div>
                             <div className="form-div">
                                 <label htmlFor="job-title">Job Title</label>
-                                <input type="text" name="job-title" placeholder="Job Title" id="job-title" />
+                                <input type="text" name="job-title" placeholder="Job Title" id="job-title" className="focus:border border-green-300" />
                             </div>
                             <div className="form-div">
                                 <label htmlFor="job-description">Job Description</label>
-                                <textarea rows={5} name="job-description" placeholder="Job Description" id="job-description" />
+                                <textarea rows={5} name="job-description" placeholder="Job Description" id="job-description" className="focus:border border-green-300" />
                             </div>
 
                             <div className="form-div">
@@ -113,8 +113,8 @@ const Upload = () => {
                                 <FileUploader onFileSelect={handleFileSelect} />
                             </div>
 
-                            <button className="primary-button" type="submit">
-                                Analyze Resume
+                            <button className="primary-button hover:brightness-120" type="submit">
+                                Save & Analyze Resume
                             </button>
                         </form>
                     )}
