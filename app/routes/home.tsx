@@ -4,7 +4,22 @@ import ResumeCard from "~/components/ResumeCard";
 import { usePuterStore } from "~/lib/puter";
 import { Link, useNavigate } from "react-router";
 import { useEffect, useState } from "react";
-import { useHydrated } from "~/hooks/useHydrated"; // ✅ ADD
+import { useHydrated } from "~/hooks/useHydrated";
+
+type HomeResumeCard = {
+  id: string;
+  companyName?: string;
+  jobTitle?: string;
+  imagePath?: string;
+  feedback?: { overallScore?: number };
+  showScore?: boolean;
+  linkTo?: string;
+  aiPreview?: {
+    name?: string;
+    summary?: string;
+    skills?: string[];
+  };
+};
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -14,14 +29,13 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home() {
-  const hydrated = useHydrated(); // ✅ ADD
+  const hydrated = useHydrated();
   const { auth, kv } = usePuterStore();
   const navigate = useNavigate();
 
-  const [resumes, setResumes] = useState<Resume[]>([]);
+  const [resumes, setResumes] = useState<HomeResumeCard[]>([]);
   const [loadingResumes, setLoadingResumes] = useState(false);
 
-  // ✅ FIX AUTH REDIRECT (client-only)
   useEffect(() => {
     if (!hydrated) return;
 
@@ -30,19 +44,57 @@ export default function Home() {
     }
   }, [hydrated, auth.isAuthenticated, navigate]);
 
-  // ✅ FIX DATA LOADING (client-only)
   useEffect(() => {
     if (!hydrated || !auth.isAuthenticated) return;
 
     const loadResumes = async () => {
       setLoadingResumes(true);
 
-      const resumes = (await kv.list("resume:*", true)) as KVItem[];
+      const items = (await kv.list("resume:*", true)) as KVItem[];
 
       const parsedResumes =
-        resumes?.map((resume) =>
-          JSON.parse(resume.value) as Resume
-        ) || [];
+        items
+          ?.map((item) => {
+            const data = JSON.parse(item.value) as Record<string, unknown>;
+
+            // AI resume builder records do not have imagePath; build a text preview.
+            if (data.aiGeneratedResume && typeof data.aiGeneratedResume === "object") {
+              const ai = data.aiGeneratedResume as Record<string, unknown>;
+              const header = (ai.header || {}) as Record<string, unknown>;
+              const skills = Array.isArray(ai.skills)
+                ? ai.skills.map((skill) => String(skill))
+                : [];
+              const id = String(data.resumeId || data.id || "");
+
+              return {
+                id,
+                companyName: "AI Resume",
+                jobTitle: String(header.name || "Generated from AI Builder"),
+                showScore: false,
+                linkTo: `/ai-resume-builder?resumeId=${id}`,
+                aiPreview: {
+                  name: String(header.name || ""),
+                  summary: String(ai.summary || ""),
+                  skills,
+                },
+              } satisfies HomeResumeCard;
+            }
+
+            const legacyId = String(data.id || data.resumeId || "");
+            return {
+              id: legacyId,
+              companyName: typeof data.companyName === "string" ? data.companyName : undefined,
+              jobTitle: typeof data.jobTitle === "string" ? data.jobTitle : undefined,
+              imagePath: typeof data.imagePath === "string" ? data.imagePath : undefined,
+              feedback:
+                data.feedback && typeof data.feedback === "object"
+                  ? (data.feedback as { overallScore?: number })
+                  : undefined,
+              showScore: typeof (data.feedback as { overallScore?: unknown } | undefined)?.overallScore === "number",
+              linkTo: `/resume/${legacyId}`,
+            } satisfies HomeResumeCard;
+          })
+          .filter((item) => item.id) || [];
 
       setResumes(parsedResumes);
       setLoadingResumes(false);
@@ -51,11 +103,10 @@ export default function Home() {
     loadResumes();
   }, [hydrated, auth.isAuthenticated, kv]);
 
-  // ✅ PREVENT HYDRATION MISMATCH
   if (!hydrated) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <p>Loading…</p>
+        <p>Loading...</p>
       </main>
     );
   }
@@ -66,7 +117,7 @@ export default function Home() {
 
       <section className="main-section">
         <div className="page-heading py-16">
-          <h1>Track Your Applications & Resume Ratings</h1>
+          <h1 className="text-gradient">Track Your Applications & Resume Ratings</h1>
 
           {!loadingResumes && resumes.length === 0 ? (
             <h2>No resumes found. Upload your first resume to get feedback.</h2>
@@ -77,11 +128,7 @@ export default function Home() {
 
         {loadingResumes && (
           <div className="flex flex-col items-center justify-center">
-            <img
-              src="/images/resume-scan-2.gif"
-              className="w-[200px]"
-              alt="Loading"
-            />
+            <img src="/images/resume-scan-2.gif" className="w-[200px]" alt="Loading" />
           </div>
         )}
 
@@ -95,10 +142,7 @@ export default function Home() {
 
         {!loadingResumes && resumes.length === 0 && (
           <div className="flex flex-col items-center justify-center mt-10 gap-4">
-            <Link
-              to="/upload"
-              className="primary-button w-fit text-xl font-semibold"
-            >
+            <Link to="/upload" className="primary-button w-fit text-xl font-semibold">
               Upload Resume
             </Link>
           </div>

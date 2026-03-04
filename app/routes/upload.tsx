@@ -36,11 +36,19 @@ const Upload = () => {
         setStatusText('Preparing data...');
         const uuid = generateUUID();
         const data = {
-            id: uuid,
+            id: String(uuid),
             resumePath: uploadedFile.path,
             imagePath: uploadedImage.path,
             companyName, jobTitle, jobDescription,
             feedback: '',
+            originalResume: {
+                jobTitle,
+                jobDescription,
+                sourceFilePath: uploadedFile.path,
+            },
+            analysis: {},
+            improvedResume: null,
+            versionHistory: [],
         }
         await kv.set(`resume:${uuid}`, JSON.stringify(data));
 
@@ -57,6 +65,9 @@ const Upload = () => {
             : feedback.message.content[0].text;
 
         data.feedback = JSON.parse(feedbackText);
+        data.analysis = data.feedback;
+
+        setStatusText('Saving resume to KV store...');
         await kv.set(`resume:${uuid}`, JSON.stringify(data));
         setStatusText('Analysis complete, redirecting...');
         console.log(data);
@@ -84,7 +95,7 @@ const Upload = () => {
 
             <section className="main-section">
                 <div className="page-heading py-16">
-                    <h1>Smart feedback for your dream job</h1>
+                    <h1 className="text-gradient">Smart feedback for your dream job</h1>
                     {isProcessing ? (
                         <>
                             <h2>{statusText}</h2>
