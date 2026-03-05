@@ -3,7 +3,7 @@ import Navbar from "~/components/Navbar";
 import FileUploader from "~/components/FileUploader";
 import {usePuterStore} from "~/lib/puter";
 import {useNavigate} from "react-router";
-import {convertPdfToImage} from "~/lib/pdf2img";
+import {convertPdfToImage, extractTextFromPdfFile} from "~/lib/pdf2img";
 import {generateUUID} from "~/lib/utils";
 import {prepareInstructions} from "../../constants";
 
@@ -20,6 +20,8 @@ const Upload = () => {
 
     const handleAnalyze = async ({ companyName, jobTitle, jobDescription, file }: { companyName: string, jobTitle: string, jobDescription: string, file: File  }) => {
         setIsProcessing(true);
+        setStatusText('Reading resume text...');
+        const parsedText = await extractTextFromPdfFile(file).catch(() => "");
 
         setStatusText('Uploading the file...');
         const uploadedFile = await fs.upload([file]);
@@ -45,6 +47,7 @@ const Upload = () => {
                 jobTitle,
                 jobDescription,
                 sourceFilePath: uploadedFile.path,
+                parsedText,
             },
             analysis: {},
             improvedResume: null,

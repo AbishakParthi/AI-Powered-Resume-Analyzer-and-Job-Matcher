@@ -102,6 +102,96 @@ function normalizeImprovedResume(payload) {
   };
 }
 
+function hasNonEmptyEducation(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasNonEmptySkills(value) {
+  return Array.isArray(value) && value.some((item) => typeof item === "string" && item.trim());
+}
+
+function hasNonEmptyExperience(value) {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const role = typeof item.role === "string" ? item.role.trim() : "";
+    const company = typeof item.company === "string" ? item.company.trim() : "";
+    const bullets = Array.isArray(item.bullets)
+      ? item.bullets.filter((b) => typeof b === "string" && b.trim())
+      : [];
+    return Boolean(role || company || bullets.length);
+  });
+}
+
+function mergeMissingSections(primary, fallback) {
+  if (!fallback || typeof fallback !== "object") return primary;
+  const merged = { ...primary };
+
+  if (!hasNonEmptyExperience(merged.experience) && hasNonEmptyExperience(fallback.experience)) {
+    merged.experience = fallback.experience;
+  }
+
+  if (!hasNonEmptySkills(merged.skills) && hasNonEmptySkills(fallback.skills)) {
+    merged.skills = fallback.skills;
+  }
+
+  if (!hasNonEmptyEducation(merged.education) && hasNonEmptyEducation(fallback.education)) {
+    merged.education = fallback.education;
+  }
+
+  if ((!merged.projects || merged.projects.length === 0) && Array.isArray(fallback.projects) && fallback.projects.length > 0) {
+    merged.projects = fallback.projects;
+  }
+
+  return merged;
+}
+
+function hasCoreSections(resume) {
+  if (!resume || typeof resume !== "object") return false;
+  return (
+    Boolean(typeof resume.summary === "string" && resume.summary.trim()) &&
+    hasNonEmptyExperience(resume.experience) &&
+    hasNonEmptySkills(resume.skills) &&
+    hasNonEmptyEducation(resume.education)
+  );
+}
+
+function normalizeFallbackFromOriginal(originalResume) {
+  if (!originalResume || typeof originalResume !== "object") {
+    return normalizeImprovedResume({});
+  }
+
+  const source = originalResume.sourceFromBuilder || {};
+  const header = source.header || originalResume.header || {};
+
+  return normalizeImprovedResume({
+    header: {
+      fullName: header.fullName || header.name || "",
+      title: header.title || originalResume.jobTitle || "",
+      email: header.email || "",
+      phone: header.phone || "",
+      location: header.location || "",
+      links: Array.isArray(header.links)
+        ? header.links
+        : [header.linkedin].filter(Boolean),
+    },
+    summary: source.summary || originalResume.summary || "",
+    experience:
+      source.experience ||
+      originalResume.experience ||
+      originalResume.workExperience ||
+      [],
+    projects: source.projects || originalResume.projects || [],
+    skills: source.skills || originalResume.skills || originalResume.keySkills || [],
+    education:
+      source.education ||
+      originalResume.education ||
+      originalResume.educationDetails ||
+      "",
+    improvedScoreEstimate: 50,
+  });
+}
+
 export async function improveResumeFromData({
   resumeId,
   originalResume,
@@ -125,6 +215,7 @@ export async function improveResumeFromData({
     originalResume,
     analysis,
     existingSuggestions: analysis?.suggestions,
+    previousImprovedResume,
   });
 
   const groq = getGroqClient();
@@ -157,6 +248,54 @@ export async function improveResumeFromData({
 
   const parsed = parseJsonFromModelOutput(modelText);
   const normalizedImprovedResume = normalizeImprovedResume(parsed);
+  const normalizedPreviousResume = normalizeImprovedResume(previousImprovedResume || {});
+  const normalizedOriginalFallback = normalizeFallbackFromOriginal(originalResume);
+  const withPreviousFallback = mergeMissingSections(
+    normalizedImprovedResume,
+    normalizedPreviousResume
+  );
+  let improvedResumeMerged = mergeMissingSections(
+    withPreviousFallback,
+    normalizedOriginalFallback
+  );
+
+  // Retry once with stricter instruction when core sections are still incomplete.
+  if (
+    !hasCoreSections(improvedResumeMerged) &&
+    typeof originalResume?.parsedText === "string" &&
+    originalResume.parsedText.trim()
+  ) {
+    try {
+      const repairResponse = await groq.chat.completions.create({
+        model,
+        temperature: 0.1,
+        max_tokens: 1700,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `${userPrompt}
+
+You returned an incomplete resume previously.
+Return a COMPLETE improved resume JSON including non-empty summary, experience, skills, and education.
+Preserve facts from raw resume text and existing data.
+Previous incomplete JSON:
+${modelText}`,
+          },
+        ],
+      });
+
+      const retryText = repairResponse?.choices?.[0]?.message?.content;
+      if (typeof retryText === "string" && retryText.trim()) {
+        const retryParsed = parseJsonFromModelOutput(retryText);
+        const retryNormalized = normalizeImprovedResume(retryParsed);
+        const retryWithPrev = mergeMissingSections(retryNormalized, normalizedPreviousResume);
+        improvedResumeMerged = mergeMissingSections(retryWithPrev, normalizedOriginalFallback);
+      }
+    } catch {
+      // Keep first-pass result with fallbacks if retry fails.
+    }
+  }
   const versionHistory = Array.isArray(previousVersionHistory)
     ? [...previousVersionHistory]
     : [];
@@ -173,7 +312,7 @@ export async function improveResumeFromData({
   }
 
   const improvedResume = {
-    ...normalizedImprovedResume,
+    ...improvedResumeMerged,
     generatedAt: new Date().toISOString(),
     model,
   };

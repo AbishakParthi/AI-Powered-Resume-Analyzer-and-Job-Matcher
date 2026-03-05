@@ -27,6 +27,27 @@ async function loadPdfJs(): Promise<any> {
     return loadPromise;
 }
 
+export async function extractTextFromPdfFile(file: File | Blob): Promise<string> {
+    const lib = await loadPdfJs();
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await lib.getDocument({ data: arrayBuffer }).promise;
+    const pages: string[] = [];
+
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const pageText = (textContent.items || [])
+            .map((item: any) => (typeof item?.str === "string" ? item.str : ""))
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        if (pageText) pages.push(pageText);
+    }
+
+    return pages.join("\n");
+}
+
 export async function convertPdfToImage(
     file: File
 ): Promise<PdfConversionResult> {

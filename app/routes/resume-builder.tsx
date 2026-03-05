@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { CSSProperties } from "react";
 import { usePuterStore } from "~/lib/puter";
+import { improveResume as improveResumeApi } from "~/lib/api";
+import { extractTextFromPdfFile } from "~/lib/pdf2img";
 import TemplateSelector from "~/components/TemplateSelector";
 import ResumeRenderer from "~/components/ResumeRenderer";
 import type {
@@ -34,6 +36,54 @@ const fromLineText = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+const toExperienceText = (items: ImprovedResumeExperienceItem[]) =>
+  items
+    .map((item) => {
+      const header = [
+        item.role || "",
+        item.company || "",
+        item.duration || "",
+        item.location || "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      const bullets = (item.bullets || []).map((bullet) => `- ${bullet}`);
+      return [header, ...bullets].filter(Boolean).join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
+const fromExperienceText = (value: string): ImprovedResumeExperienceItem[] =>
+  value
+    .split(/\n\s*\n/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      const lines = block
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (!lines.length) {
+        return {
+          company: "",
+          role: "",
+          duration: "",
+          location: "",
+          bullets: [],
+        };
+      }
+
+      const [role = "", company = "", duration = "", location = ""] = lines[0]
+        .split("|")
+        .map((part) => part.trim());
+      const bullets = lines
+        .slice(1)
+        .map((line) => line.replace(/^[-*]\s*/, "").trim())
+        .filter(Boolean);
+
+      return { company, role, duration, location, bullets };
+    });
+
 const exportSafeColorVars: CSSProperties = {
   // html2canvas/html2pdf does not support oklch() color functions used by Tailwind v4 tokens.
   // Override relevant tokens with hex colors only inside the printable preview subtree.
@@ -50,7 +100,7 @@ const exportSafeColorVars: CSSProperties = {
 export default function ResumeBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { auth, isLoading, kv } = usePuterStore();
+  const { auth, isLoading, kv, fs } = usePuterStore();
   const [resume, setResume] = useState<ImprovedResume>(defaultImprovedResume);
   const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplateId>("modern");
   const [availableTemplates, setAvailableTemplates] = useState<ResumeTemplateId[]>([
@@ -60,7 +110,9 @@ export default function ResumeBuilder() {
     "creative",
   ]);
   const [skillsText, setSkillsText] = useState("");
+  const [experienceText, setExperienceText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isImproving, setIsImproving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [pageError, setPageError] = useState("");
   const previewRef = useRef<HTMLDivElement>(null);
@@ -92,6 +144,7 @@ export default function ResumeBuilder() {
           : ["modern", "minimal", "corporate", "creative"]
       );
       setSkillsText(toLineText(parsed.improvedResume.skills || []));
+      setExperienceText(toExperienceText(parsed.improvedResume.experience || []));
     };
 
     loadResume();
@@ -178,6 +231,130 @@ export default function ResumeBuilder() {
       setPageError(message);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const collectSuggestions = (analysis: Record<string, unknown>, feedback: Feedback | null) => {
+    if (Array.isArray(analysis.suggestions)) {
+      return analysis.suggestions;
+    }
+
+    if (!feedback) {
+      return [];
+    }
+
+    const sections = ["ATS", "toneAndStyle", "content", "structure", "skills"] as const;
+    const suggestions: string[] = [];
+
+    sections.forEach((section) => {
+      const sectionData = feedback[section];
+      if (!sectionData || !Array.isArray(sectionData.tips)) return;
+      sectionData.tips.forEach((tip) => {
+        if (tip.type !== "improve") return;
+        const explanation =
+          "explanation" in tip && typeof tip.explanation === "string"
+            ? tip.explanation
+            : "";
+        const line = explanation ? `${tip.tip}: ${explanation}` : tip.tip;
+        if (line) suggestions.push(line);
+      });
+    });
+
+    return suggestions;
+  };
+
+  const handleImproveWithAi = async () => {
+    if (!id) return;
+    setIsImproving(true);
+    setPageError("");
+
+    try {
+      const raw = await kv.get(`resume:${id}`);
+      if (!raw) {
+        throw new Error("Resume record not found");
+      }
+
+      const parsed = JSON.parse(raw) as Resume;
+      if (!parsed.originalResume || typeof parsed.originalResume !== "object") {
+        throw new Error("Original candidate resume data is missing");
+      }
+
+      let parsedText =
+        typeof (parsed.originalResume as Record<string, unknown>).parsedText === "string"
+          ? String((parsed.originalResume as Record<string, unknown>).parsedText)
+          : "";
+
+      if (!parsedText && typeof parsed.resumePath === "string" && parsed.resumePath) {
+        try {
+          const resumeBlob = await fs.read(parsed.resumePath);
+          if (resumeBlob) {
+            parsedText = await extractTextFromPdfFile(resumeBlob);
+          }
+        } catch {
+          // Continue without parsed text; backend fallback and previous versions still apply.
+        }
+      }
+
+      const analysis =
+        parsed.analysis && typeof parsed.analysis === "object"
+          ? (parsed.analysis as Record<string, unknown>)
+          : {};
+
+      const feedback = parsed.feedback || null;
+      const suggestions = collectSuggestions(analysis, feedback);
+      const analysisPayload =
+        Object.keys(analysis).length > 0 || suggestions.length > 0
+          ? { ...analysis, suggestions }
+          : null;
+
+      if (!analysisPayload) {
+        throw new Error("Resume review feedback is missing. Re-run analysis and try again.");
+      }
+
+      const sourceFromBuilder = {
+        header: resume.header,
+        summary: resume.summary,
+        experience: resume.experience,
+        projects: resume.projects,
+        skills: resume.skills,
+        education: resume.education,
+      };
+
+      const result = await improveResumeApi({
+        resumeId: id,
+        originalResume: {
+          ...(parsed.originalResume || {}),
+          parsedText,
+          sourceFromBuilder,
+        },
+        analysis: analysisPayload,
+        improvedResume: parsed.improvedResume,
+        versionHistory: parsed.versionHistory,
+      });
+
+      const nextImprovedResume: ImprovedResume = {
+        ...result.improvedResume,
+        selectedTemplate,
+        availableTemplates,
+      };
+
+      setResume(nextImprovedResume);
+      setSkillsText(toLineText(nextImprovedResume.skills || []));
+      setExperienceText(toExperienceText(nextImprovedResume.experience || []));
+
+      parsed.improvedResume = nextImprovedResume;
+      parsed.originalResume = {
+        ...(parsed.originalResume || {}),
+        parsedText,
+      };
+      parsed.versionHistory = result.versionHistory;
+      await kv.set(`resume:${id}`, JSON.stringify(parsed));
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to improve resume with AI";
+      setPageError(message);
+    } finally {
+      setIsImproving(false);
     }
   };
 
@@ -324,6 +501,16 @@ export default function ResumeBuilder() {
               placeholder="Skills (one per line)"
             />
             <textarea
+              rows={8}
+              value={experienceText}
+              onChange={(e) => {
+                const value = e.target.value;
+                setExperienceText(value);
+                setResume((prev) => ({ ...prev, experience: fromExperienceText(value) }));
+              }}
+              placeholder="Experience (one block per role: Role | Company | Duration | Location, then bullet lines prefixed with -)"
+            />
+            <textarea
               rows={3}
               value={resume.education}
               onChange={(e) => setResume((prev) => ({ ...prev, education: e.target.value }))}
@@ -399,6 +586,14 @@ export default function ResumeBuilder() {
             ))}
 
             <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="primary-button w-fit px-6"
+                onClick={handleImproveWithAi}
+                disabled={isImproving}
+              >
+                {isImproving ? "Improving with AI..." : "Improve with AI (ATS-friendly)"}
+              </button>
               <button type="button" className="primary-button w-fit px-6" onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Saving..." : "Save Changes"}
               </button>

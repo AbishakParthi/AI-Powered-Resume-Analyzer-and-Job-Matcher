@@ -18,14 +18,20 @@ export async function improveResume(payload: {
   }[];
 }): Promise<ImproveResumeApiResponse> {
   const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
-
-  const response = await fetch(`${baseUrl}/api/resume/improve`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}/api/resume/improve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach Resume API at ${baseUrl}. Start backend server (npm run dev:backend) and verify VITE_API_BASE_URL.`
+    );
+  }
 
   if (!response.ok) {
     let message = "Failed to improve resume";
