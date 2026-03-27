@@ -150,3 +150,25 @@ form {
     opacity: 1;
   }
 }
+.navbar,
+.resume-nav{
+  position: sticky;
+  top: 25px;
+  box-shadow: 0px 0px 10px;
+  z-index: 100;
+}
+.inp:focus{
+  box-shadow: 0px 0px 10px green;
+}
+.fu{
+  box-shadow: 0px 0px 5px;
+}
+.fu:hover{
+  box-shadow: 0px 0px 15px;
+}
+.rn{
+  position: sticky;
+  top: 0;
+  box-shadow: 0px 0px 10px;
+  z-index: 100;
+}

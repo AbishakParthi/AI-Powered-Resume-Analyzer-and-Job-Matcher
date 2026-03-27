@@ -572,9 +572,9 @@ Return STRICT JSON ONLY with this schema:
     <main className="min-h-screen bg-[linear-gradient(145deg,#f8fafc_0%,#e0f2fe_45%,#fef3c7_100%)] p-4 sm:p-8">
       <div className="max-w-370 mx-auto space-y-4">
         <nav className="resume-nav bg-white rounded-xl">
-          <Link to="/" className="back-button">
+          <Link to="/" className="back-button bg-blue-600 hover:bg-blue-700">
             <img src="/icons/back.svg" alt="back" className="w-2.5 h-2.5" />
-            <span className="text-gray-800 text-sm font-semibold">Back to Home</span>
+            <span className="text-white text-sm font-semibold">Back to Home</span>
           </Link>
           Advanced AI Resume Builder
         </nav>

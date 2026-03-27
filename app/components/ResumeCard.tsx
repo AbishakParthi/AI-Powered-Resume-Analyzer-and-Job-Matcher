@@ -37,12 +37,12 @@ const ResumeCard = ({ resume }: { resume: ResumeCardData }) => {
     }, [imagePath]);
 
     return (
-        <Link to={linkTo || `/resume/${id}`} className="resume-card animate-in fade-in duration-1000 hover:shadow-[0_0_20px_rgba(0,255,0,1)] hover:-translate-y-5 hover:bg-blue-600">
+        <Link to={linkTo || `/resume/${id}`} className="resume-card animate-in fade-in duration-1000 hover:shadow-[0_0_20px_rgba(0,255,0,1)] hover:-translate-y-5 hover:bg-blue-600 group">
             <div className="resume-card-header">
                 <div className="flex flex-col gap-2">
-                    {companyName && <h2 className="text-black! font-bold wrap-break-word">{companyName}</h2>}
-                    {jobTitle && <h3 className="text-lg wrap-break-word text-gray-500">{jobTitle}</h3>}
-                    {!companyName && !jobTitle && <h2 className="text-black! font-bold">Resume</h2>}
+                    {companyName && <h2 className="text-black! font-bold wrap-break-word group-hover:text-white!">{companyName}</h2>}
+                    {jobTitle && <h3 className="text-lg wrap-break-word text-gray-500 group-hover:text-white!">{jobTitle}</h3>}
+                    {!companyName && !jobTitle && <h2 className="text-black! font-bold group-hover:text-white!">Resume</h2>}
                 </div>
                 {showScore && (
                     <div className="shrink-0">
@@ -56,14 +56,14 @@ const ResumeCard = ({ resume }: { resume: ResumeCardData }) => {
                         <img
                             src={resumeUrl}
                             alt="resume"
-                            className="w-full h-[350px] max-sm:h-[200px] object-cover object-top"
+                            className="w-full h-87.5 max-sm:h-50 object-cover object-top"
                         />
                     </div>
                 </div>
             )}
             {!resumeUrl && aiPreview && (
                 <div className="gradient-border animate-in fade-in duration-1000">
-                    <div className="bg-white rounded-xl p-4 h-[350px] max-sm:h-[200px] overflow-hidden border border-gray-100">
+                    <div className="bg-white rounded-xl p-4 h-87.5 max-sm:h-50 overflow-hidden border border-gray-100">
                         <p className="text-sm font-bold text-black">{aiPreview.name || "AI Resume"}</p>
                         {aiPreview.summary && (
                             <p className="text-xs text-gray-600 mt-2 line-clamp-5">{aiPreview.summary}</p>
