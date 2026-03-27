@@ -593,9 +593,9 @@ export default function ResumeBuilder() {
     <main className="bg-[linear-gradient(145deg,#f8fafc_0%,#eef2ff_42%,#fef9c3_100%)] min-h-screen p-4 sm:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-4">
         <nav className="resume-nav bg-white rounded-xl">
-          <Link to={`/resume/${id}`} className="back-button">
+          <Link to={`/resume/${id}`} className="back-button bg-blue-600 hover:bg-blue-700">
             <img src="/icons/back.svg" alt="back" className="w-2.5 h-2.5" />
-            <span className="text-gray-800 text-sm font-semibold">Back to Resume Review</span>
+            <span className="text-white text-sm font-semibold">Back to Resume Review</span>
           </Link>
           AI Resume Builder
         </nav>
