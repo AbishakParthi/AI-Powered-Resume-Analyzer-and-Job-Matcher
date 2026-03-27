@@ -18,25 +18,58 @@ const toEducationLines = (education: Array<Record<string, unknown>>) => {
     .filter(Boolean);
 };
 
+const toProjectCards = (projects: Array<Record<string, unknown>>) => {
+  const toString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const toStringArray = (value: unknown) =>
+    Array.isArray(value)
+      ? value.map((item) => toString(item)).filter(Boolean)
+      : [];
+
+  return projects
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const title = toString(record.title || record.name);
+      const description = toString(record.description);
+      const technologies = toStringArray(record.technologies || record.techStack);
+      const bullets = toStringArray(record.bullets);
+      const hasContent =
+        Boolean(title) || Boolean(description) || technologies.length > 0 || bullets.length > 0;
+      if (!hasContent) return null;
+      return { title, description, technologies, bullets };
+    })
+    .filter(Boolean) as Array<{
+      title: string;
+      description: string;
+      technologies: string[];
+      bullets: string[];
+    }>;
+};
+
 export default function CorporateTemplate({ data, customization }: TemplateProps) {
   const spacing = spacingClassMap[customization.spacing];
   const educationLines = toEducationLines(data.education);
   const certifications = data.certifications || [];
+  const projects = toProjectCards(data.projects || []);
   const isHidden = (section: string) => customization.hiddenSections.includes(section);
 
   return (
     <article
-      className={`bg-white text-black box-border w-full max-w-[794px] p-10 mx-auto ${spacing}`}
+      className={`bg-white text-black box-border w-full max-w-198.5 p-10 mx-auto ${spacing}`}
       style={{ fontFamily: customization.fontFamily }}
     >
       <header className="grid grid-cols-[1fr_auto] gap-4 border-b-2 pb-4" style={{ borderColor: customization.themeColor }}>
         <div>
           <div className="text-3xl font-extrabold text-black">{data.header.name}</div>
+          {data.header.title && <p className="text-sm mt-1">{data.header.title}</p>}
           <p className="text-sm mt-1">{data.header.email}</p>
           <p className="text-sm">{data.header.phone}</p>
+          {data.header.location && <p className="text-sm">{data.header.location}</p>}
         </div>
         <div className="text-right text-sm">
-          <p>{data.header.linkedin}</p>
+          {[data.header.linkedin, data.header.portfolio].filter(Boolean).length > 0 && (
+            <p>{[data.header.linkedin, data.header.portfolio].filter(Boolean).join(" | ")}</p>
+          )}
           <p className="mt-2 font-semibold">ATS: {data.estimatedATSScore}/100</p>
         </div>
       </header>
@@ -65,6 +98,32 @@ export default function CorporateTemplate({ data, customization }: TemplateProps
             </div>
           ))}
         </div>
+        </section>
+      )}
+
+      {!isHidden("projects") && projects.length > 0 && (
+        <section>
+          <h2 className="text-sm font-bold uppercase tracking-wide">Projects</h2>
+          <div className="mt-2 space-y-4">
+            {projects.map((project, index) => (
+              <div key={`${project.title || "project"}-${index}`} className="border-l-2 pl-3" style={{ borderColor: customization.themeColor }}>
+                {project.title && <p className="font-semibold text-sm">{project.title}</p>}
+                {project.description && <p className="text-sm mt-1 leading-6">{project.description}</p>}
+                {project.technologies.length > 0 && (
+                  <p className="text-xs mt-1 text-gray-700">
+                    {project.technologies.join(" | ")}
+                  </p>
+                )}
+                {project.bullets.length > 0 && (
+                  <ul className="list-disc ml-5 mt-1 text-sm">
+                    {project.bullets.map((bullet, bulletIndex) => (
+                      <li key={`${index}-${bulletIndex}`}>{bullet}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

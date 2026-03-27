@@ -2,9 +2,12 @@ export type ResumeTemplateId = "modern" | "minimal" | "corporate" | "creative" |
 
 export interface AIResumeHeader {
   name: string;
+  title?: string;
   email: string;
   phone: string;
+  location?: string;
   linkedin: string;
+  portfolio?: string;
 }
 
 export interface AIResumeExperienceItem {
@@ -60,7 +63,7 @@ export const TEMPLATE_LIBRARY: TemplateMeta[] = [
 ];
 
 export const DEFAULT_AI_RESUME: AIResumeDocument = {
-  header: { name: "", email: "", phone: "", linkedin: "" },
+  header: { name: "", title: "", email: "", phone: "", location: "", linkedin: "", portfolio: "" },
   summary: "",
   experience: [],
   projects: [],

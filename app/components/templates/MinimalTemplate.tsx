@@ -18,20 +18,54 @@ const toEducationLines = (education: Array<Record<string, unknown>>) => {
     .filter(Boolean);
 };
 
+const toProjectCards = (projects: Array<Record<string, unknown>>) => {
+  const toString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const toStringArray = (value: unknown) =>
+    Array.isArray(value)
+      ? value.map((item) => toString(item)).filter(Boolean)
+      : [];
+
+  return projects
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Record<string, unknown>;
+      const title = toString(record.title || record.name);
+      const description = toString(record.description);
+      const technologies = toStringArray(record.technologies || record.techStack);
+      const bullets = toStringArray(record.bullets);
+      const hasContent =
+        Boolean(title) || Boolean(description) || technologies.length > 0 || bullets.length > 0;
+      if (!hasContent) return null;
+      return { title, description, technologies, bullets };
+    })
+    .filter(Boolean) as Array<{
+      title: string;
+      description: string;
+      technologies: string[];
+      bullets: string[];
+    }>;
+};
+
 export default function MinimalTemplate({ data, customization }: TemplateProps) {
   const spacing = spacingClassMap[customization.spacing];
   const educationLines = toEducationLines(data.education);
   const certifications = data.certifications || [];
+  const projects = toProjectCards(data.projects || []);
   const isHidden = (section: string) => customization.hiddenSections.includes(section);
 
   return (
     <article
-      className={`bg-white text-black box-border w-full max-w-[794px] p-10 mx-auto ${spacing}`}
+      className={`bg-white text-black box-border w-full max-w-198.5 p-10 mx-auto ${spacing}`}
       style={{ fontFamily: customization.fontFamily }}
     >
       <header className="pb-4 border-b border-gray-300">
         <div className="text-3xl font-bold text-black">{data.header.name}</div>
-        <p className="text-sm mt-1">{[data.header.email, data.header.phone, data.header.linkedin].filter(Boolean).join(" | ")}</p>
+        {data.header.title && <p className="text-sm mt-1">{data.header.title}</p>}
+        <p className="text-sm mt-1">
+          {[data.header.email, data.header.phone, data.header.location, data.header.linkedin, data.header.portfolio]
+            .filter(Boolean)
+            .join(" | ")}
+        </p>
       </header>
 
       {!isHidden("summary") && (
@@ -57,6 +91,32 @@ export default function MinimalTemplate({ data, customization }: TemplateProps) 
             </div>
           ))}
         </div>
+        </section>
+      )}
+
+      {!isHidden("projects") && projects.length > 0 && (
+        <section>
+          <h2 className="font-semibold text-sm uppercase">Projects</h2>
+          <div className="mt-1 space-y-2">
+            {projects.map((project, index) => (
+              <div key={`${project.title || "project"}-${index}`}>
+                {project.title && <p className="text-sm font-semibold">{project.title}</p>}
+                {project.description && <p className="text-sm mt-1 leading-6">{project.description}</p>}
+                {project.technologies.length > 0 && (
+                  <p className="text-xs mt-1 text-gray-700">
+                    {project.technologies.join(", ")}
+                  </p>
+                )}
+                {project.bullets.length > 0 && (
+                  <ul className="list-disc ml-5 mt-1 text-sm">
+                    {project.bullets.map((bullet, bulletIndex) => (
+                      <li key={`${index}-${bulletIndex}`}>{bullet}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
         </section>
       )}
 

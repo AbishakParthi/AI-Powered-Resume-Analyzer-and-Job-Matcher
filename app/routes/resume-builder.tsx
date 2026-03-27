@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { CSSProperties } from "react";
+import type { ChangeEvent } from "react";
 import { toast } from "react-toastify";
 import { usePuterStore } from "~/lib/puter";
 import { improveResume as improveResumeApi } from "~/lib/api";
@@ -12,6 +13,7 @@ import type {
   ResumeCustomization,
   ResumeTemplateId,
 } from "~/lib/resume-builder-types";
+import { DEFAULT_CUSTOMIZATION } from "~/lib/resume-builder-types";
 
 const defaultImprovedResume: ImprovedResume = {
   header: {
@@ -30,6 +32,21 @@ const defaultImprovedResume: ImprovedResume = {
   certifications: [],
   improvedScoreEstimate: 0,
 };
+
+const emptyExperienceItem = (): ImprovedResumeExperienceItem => ({
+  company: "",
+  role: "",
+  duration: "",
+  location: "",
+  bullets: [],
+});
+
+const emptyProjectItem = (): ImprovedResumeProjectItem => ({
+  name: "",
+  techStack: [],
+  bullets: [],
+  link: "",
+});
 
 const toLineText = (items: string[]) => items.join("\n");
 const fromLineText = (value: string) =>
@@ -86,6 +103,21 @@ const fromExperienceText = (value: string): ImprovedResumeExperienceItem[] =>
       return { company, role, duration, location, bullets };
     });
 
+const reorder = (list: string[], from: number, to: number) => {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+};
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(new Error("Failed to read image file"));
+    reader.readAsDataURL(file);
+  });
+
 const exportSafeColorVars: CSSProperties = {
   // html2canvas/html2pdf does not support oklch() color functions used by Tailwind v4 tokens.
   // Override relevant tokens with hex colors only inside the printable preview subtree.
@@ -110,7 +142,13 @@ export default function ResumeBuilder() {
     "minimal",
     "corporate",
     "creative",
+    "photo-pro",
   ]);
+
+  const normalizeTemplates = (templates: string[]) =>
+    templates.filter((template): template is ResumeTemplateId =>
+      ["modern", "minimal", "corporate", "creative", "photo-pro"].includes(template)
+    );
   const [skillsText, setSkillsText] = useState("");
   const [certificationsText, setCertificationsText] = useState("");
   const [experienceText, setExperienceText] = useState("");
@@ -118,7 +156,70 @@ export default function ResumeBuilder() {
   const [isImproving, setIsImproving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [pageError, setPageError] = useState("");
+  const [customization, setCustomization] =
+    useState<ResumeCustomization>(DEFAULT_CUSTOMIZATION);
+  const [dragFromSection, setDragFromSection] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  const updateHeaderLink = (index: number, value: string) => {
+    setResume((prev) => {
+      const links = Array.isArray(prev.header.links) ? [...prev.header.links] : [];
+      links[index] = value;
+      return { ...prev, header: { ...prev.header, links } };
+    });
+  };
+
+  const handleAddExperience = () => {
+    setResume((prev) => ({
+      ...prev,
+      experience: [...prev.experience, emptyExperienceItem()],
+    }));
+  };
+
+  const handleRemoveExperience = (index: number) => {
+    setResume((prev) => ({
+      ...prev,
+      experience: prev.experience.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const handleAddProject = () => {
+    setResume((prev) => ({
+      ...prev,
+      projects: [...prev.projects, emptyProjectItem()],
+    }));
+  };
+
+  const handleRemoveProject = (index: number) => {
+    setResume((prev) => ({
+      ...prev,
+      projects: prev.projects.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const handlePhotoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Profile photo must be 5MB or smaller.");
+      return;
+    }
+
+    try {
+      setPageError("");
+      const dataUrl = await fileToDataUrl(file);
+      setCustomization((prev) => ({ ...prev, photoDataUrl: dataUrl }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to upload profile photo";
+      setPageError(message);
+    }
+  };
 
   useEffect(() => {
     if (!isLoading && !auth.isAuthenticated) {
@@ -141,11 +242,14 @@ export default function ResumeBuilder() {
       }
       setResume(parsed.improvedResume);
       setSelectedTemplate(parsed.improvedResume.selectedTemplate || "modern");
-      setAvailableTemplates(
-        parsed.improvedResume.availableTemplates?.length
-          ? parsed.improvedResume.availableTemplates
-          : ["modern", "minimal", "corporate", "creative"]
+      const loadedTemplates = parsed.improvedResume.availableTemplates?.length
+        ? parsed.improvedResume.availableTemplates
+        : ["modern", "minimal", "corporate", "creative", "photo-pro"];
+      const normalizedTemplates = normalizeTemplates(
+        Array.from(new Set([...loadedTemplates, "photo-pro"]))
       );
+      setAvailableTemplates(normalizedTemplates);
+      setCustomization(parsed.improvedResume.customization || DEFAULT_CUSTOMIZATION);
       setSkillsText(toLineText(parsed.improvedResume.skills || []));
       setExperienceText(toExperienceText(parsed.improvedResume.experience || []));
       setCertificationsText(toLineText(parsed.improvedResume.certifications || []));
@@ -155,52 +259,79 @@ export default function ResumeBuilder() {
   }, [id, kv]);
 
   const previewSkills = useMemo(() => resume.skills.filter(Boolean), [resume.skills]);
+  const visibleSectionOrder = useMemo(
+    () =>
+      customization.sectionOrder.filter(
+        (section) => !customization.hiddenSections.includes(section)
+      ),
+    [customization.sectionOrder, customization.hiddenSections]
+  );
   const previewData = useMemo<AIResumeDocument>(
     () => ({
       header: {
         name: resume.header.fullName,
+        title: resume.header.title,
         email: resume.header.email,
         phone: resume.header.phone,
+        location: resume.header.location,
         linkedin: resume.header.links?.[0] || "",
+        portfolio: resume.header.links?.[1] || "",
       },
-      summary: resume.summary,
-      experience: resume.experience.map((item) => ({
-        title: item.role,
-        company: item.company,
-        duration: item.duration,
-        bullets: item.bullets,
-      })),
-      projects: resume.projects.map((item) => ({
-        title: item.name,
-        description: item.bullets?.[0] || "",
-        technologies: item.techStack || [],
-        bullets: item.bullets || [],
-      })),
-      skills: previewSkills,
-      education: resume.education
-        ? resume.education
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean)
-            .map((line) => ({ details: line }))
+      summary: visibleSectionOrder.includes("summary") ? resume.summary : "",
+      experience: visibleSectionOrder.includes("experience")
+        ? resume.experience.map((item) => ({
+            title: item.role,
+            company: item.company,
+            duration: item.duration,
+            bullets: item.bullets,
+          }))
         : [],
-      certifications: resume.certifications || [],
+      projects: visibleSectionOrder.includes("projects")
+        ? resume.projects.map((item) => ({
+            title: item.name,
+            description: item.bullets?.[0] || "",
+            technologies: item.techStack || [],
+            bullets: item.bullets || [],
+          }))
+        : [],
+      skills: visibleSectionOrder.includes("skills") ? previewSkills : [],
+      education: visibleSectionOrder.includes("education")
+        ? resume.education
+            ? resume.education
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => ({ details: line }))
+            : []
+        : [],
+      certifications: visibleSectionOrder.includes("certifications")
+        ? resume.certifications || []
+        : [],
       keywordsUsed: [],
       estimatedATSScore: resume.improvedScoreEstimate || 0,
     }),
-    [resume, previewSkills]
+    [resume, previewSkills, visibleSectionOrder]
   );
-  const previewCustomization = useMemo<ResumeCustomization>(
-    () => ({
-      themeColor: "#2563eb",
-      fontFamily: "Inter",
-      spacing: "normal",
-      sectionOrder: ["summary", "experience", "projects", "skills", "education", "certifications"],
-      hiddenSections: [],
-      photoDataUrl: "",
-    }),
-    []
-  );
+
+  const toggleSection = (section: string) => {
+    setCustomization((prev) => {
+      const hidden = prev.hiddenSections.includes(section)
+        ? prev.hiddenSections.filter((item) => item !== section)
+        : [...prev.hiddenSections, section];
+      return { ...prev, hiddenSections: hidden };
+    });
+  };
+
+  const onDropSection = (targetSection: string) => {
+    if (!dragFromSection || dragFromSection === targetSection) return;
+    setCustomization((prev) => {
+      const from = prev.sectionOrder.indexOf(dragFromSection);
+      const to = prev.sectionOrder.indexOf(targetSection);
+      if (from < 0 || to < 0) return prev;
+      return { ...prev, sectionOrder: reorder(prev.sectionOrder, from, to) };
+    });
+    setDragFromSection(null);
+  };
 
   const updateExperienceBullets = (index: number, value: string) => {
     setResume((prev) => {
@@ -219,12 +350,35 @@ export default function ResumeBuilder() {
   };
 
   const handleSave = async () => {
+    if (!id) {
+      toast.error("Resume not found. Build or load a resume first.");
+      return;
+    }
+    const hasExperience = resume.experience.some(
+      (item) =>
+        item.role.trim() ||
+        item.company.trim() ||
+        item.duration.trim() ||
+        item.location.trim() ||
+        item.bullets.length > 0
+    );
+    const hasProjects = resume.projects.some(
+      (item) =>
+        item.name.trim() ||
+        item.link.trim() ||
+        item.techStack.length > 0 ||
+        item.bullets.length > 0
+    );
     if (!resume.header.fullName.trim()) {
       toast.error("Full name can't be empty.");
       return;
     }
     if (!resume.header.email.trim()) {
       toast.error("Email can't be empty.");
+      return;
+    }
+    if (!hasExperience && !hasProjects) {
+      toast.error("Add at least one experience or project before saving.");
       return;
     }
     setIsSaving(true);
@@ -236,6 +390,7 @@ export default function ResumeBuilder() {
         ...resume,
         selectedTemplate,
         availableTemplates,
+        customization,
       };
       await kv.set(`resume:${id}`, JSON.stringify(parsed));
     } catch (error) {
@@ -356,6 +511,7 @@ export default function ResumeBuilder() {
         ...result.improvedResume,
         selectedTemplate,
         availableTemplates,
+        customization,
       };
 
       setResume(nextImprovedResume);
@@ -434,8 +590,8 @@ export default function ResumeBuilder() {
   };
 
   return (
-    <main className="bg-[linear-gradient(145deg,_#f8fafc_0%,_#eef2ff_42%,_#fef9c3_100%)] min-h-screen p-4 sm:p-8">
-      <div className="max-w-[1400px] mx-auto flex flex-col gap-4">
+    <main className="bg-[linear-gradient(145deg,#f8fafc_0%,#eef2ff_42%,#fef9c3_100%)] min-h-screen p-4 sm:p-8">
+      <div className="max-w-350 mx-auto flex flex-col gap-4">
         <nav className="resume-nav bg-white rounded-xl">
           <Link to={`/resume/${id}`} className="back-button">
             <img src="/icons/back.svg" alt="back" className="w-2.5 h-2.5" />
@@ -458,6 +614,102 @@ export default function ResumeBuilder() {
               onSelect={(template) => setSelectedTemplate(template)}
               allowedTemplates={availableTemplates}
             />
+
+            <h3 className="font-semibold text-black">Customization</h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-sm text-gray-700">
+                Theme Color
+                <input
+                  type="color"
+                  value={customization.themeColor}
+                  onChange={(e) =>
+                    setCustomization((prev) => ({ ...prev, themeColor: e.target.value }))
+                  }
+                  className="h-10 p-1"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                Font
+                <select
+                  value={customization.fontFamily}
+                  onChange={(e) =>
+                    setCustomization((prev) => ({ ...prev, fontFamily: e.target.value }))
+                  }
+                >
+                  <option>Inter</option>
+                  <option>Georgia</option>
+                  <option>Arial</option>
+                  <option>Times New Roman</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="text-sm text-gray-700">
+              Spacing
+              <select
+                value={customization.spacing}
+                onChange={(e) =>
+                  setCustomization((prev) => ({
+                    ...prev,
+                    spacing: e.target.value as ResumeCustomization["spacing"],
+                  }))
+                }
+              >
+                <option value="compact">Compact</option>
+                <option value="normal">Normal</option>
+                <option value="relaxed">Relaxed</option>
+              </select>
+            </label>
+
+            {selectedTemplate === "photo-pro" && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-black">Profile Photo</p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="h-auto p-3"
+                />
+                {customization.photoDataUrl && (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={customization.photoDataUrl}
+                      alt="Profile preview"
+                      className="h-14 w-14 rounded-full object-cover border border-gray-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCustomization((prev) => ({ ...prev, photoDataUrl: "" }))
+                      }
+                      className="text-xs underline"
+                    >
+                      Remove photo
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-black">Section Order & Visibility</p>
+              {customization.sectionOrder.map((section, index) => (
+                <div
+                  key={section}
+                  draggable
+                  onDragStart={() => setDragFromSection(section)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => onDropSection(section)}
+                  className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2"
+                >
+                  <span className="text-sm">{index + 1}. {section}</span>
+                  <button type="button" onClick={() => toggleSection(section)} className="text-xs underline">
+                    {customization.hiddenSections.includes(section) ? "Show" : "Hide"}
+                  </button>
+                </div>
+              ))}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
@@ -510,6 +762,16 @@ export default function ResumeBuilder() {
                 }
                 placeholder="Location"
                 className="sm:col-span-2"
+              />
+              <input
+                value={resume.header.links?.[0] || ""}
+                onChange={(e) => updateHeaderLink(0, e.target.value)}
+                placeholder="LinkedIn"
+              />
+              <input
+                value={resume.header.links?.[1] || ""}
+                onChange={(e) => updateHeaderLink(1, e.target.value)}
+                placeholder="Portfolio Website"
               />
             </div>
 
@@ -598,8 +860,19 @@ export default function ResumeBuilder() {
                   onChange={(e) => updateExperienceBullets(index, e.target.value)}
                   placeholder="Bullets (one per line)"
                 />
+                <button
+                  type="button"
+                  className="text-xs underline text-left w-fit"
+                  onClick={() => handleRemoveExperience(index)}
+                >
+                  Remove Experience
+                </button>
               </div>
             ))}
+
+            <button type="button" className="primary-button w-fit px-6" onClick={handleAddExperience}>
+              Add Experience
+            </button>
 
             {resume.projects.map((item, index) => (
               <div key={`${item.name}-${index}`} className="rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
@@ -621,24 +894,35 @@ export default function ResumeBuilder() {
                   onChange={(e) => updateProjectBullets(index, e.target.value)}
                   placeholder="Project bullets (one per line)"
                 />
+                <button
+                  type="button"
+                  className="text-xs underline text-left w-fit"
+                  onClick={() => handleRemoveProject(index)}
+                >
+                  Remove Project
+                </button>
               </div>
             ))}
+
+            <button type="button" className="primary-button w-fit px-6" onClick={handleAddProject}>
+              Add Project
+            </button>
 
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                className="primary-button w-fit px-6"
+                className={isImproving ? "primary-button w-fit px-6 animate-pulse" : "primary-button w-fit px-6"}
                 onClick={handleImproveWithAi}
                 disabled={isImproving}
               >
                 {isImproving ? "Improving with AI..." : "Improve with AI (ATS-friendly)"}
               </button>
-              <button type="button" className="primary-button w-fit px-6" onClick={handleSave} disabled={isSaving}>
+              <button type="button" className={isSaving ? "primary-button w-fit px-6 animate-pulse" : "primary-button w-fit px-6"} onClick={handleSave} disabled={isSaving}>
                 {isSaving ? "Saving..." : "Save Changes"}
               </button>
               <button
                 type="button"
-                className="primary-button w-fit px-6"
+                className={isDownloading ? "primary-button w-fit px-6 animate-pulse" : "primary-button w-fit px-6"}
                 onClick={handleDownloadPdf}
                 disabled={isDownloading}
               >
@@ -647,17 +931,17 @@ export default function ResumeBuilder() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto">
+          <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit">
             <div
               ref={previewRef}
               data-export-root="resume-preview"
               style={exportSafeColorVars}
-              className="mx-auto bg-white text-black max-w-[794px]"
+              className="mx-auto bg-white text-black max-w-198.5"
             >
               <ResumeRenderer
                 selectedTemplate={selectedTemplate}
                 data={previewData}
-                customization={previewCustomization}
+                customization={customization}
               />
             </div>
           </div>

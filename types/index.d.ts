@@ -92,6 +92,14 @@ interface ImprovedResume {
     improvedScoreEstimate: number;
     selectedTemplate?: "modern" | "minimal" | "corporate" | "creative" | "photo-pro";
     availableTemplates?: ("modern" | "minimal" | "corporate" | "creative" | "photo-pro")[];
+    customization?: {
+        themeColor: string;
+        fontFamily: string;
+        spacing: "compact" | "normal" | "relaxed";
+        sectionOrder: string[];
+        hiddenSections: string[];
+        photoDataUrl?: string;
+    };
     generatedAt?: string;
     model?: string;
 }
