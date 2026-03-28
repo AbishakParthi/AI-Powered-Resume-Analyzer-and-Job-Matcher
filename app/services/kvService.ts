@@ -66,8 +66,37 @@ export async function listUserResumes(
   userId: string
 ): Promise<ResumeRecord[]> {
   const index = parseJson<string[]>(await kv.get(`user:${userId}:resumes`), []);
-  const records = await Promise.all(index.map((resumeId) => getResume(kv, resumeId)));
-  return records.filter(Boolean) as ResumeRecord[];
+  if (index.length > 0) {
+    const records = await Promise.all(index.map((resumeId) => getResume(kv, resumeId)));
+    return records.filter(Boolean) as ResumeRecord[];
+  }
+
+  // Fallback for older data where the user index was never created.
+  const items = await kv.list("resume:*", true);
+  const normalizedItems = await Promise.all(
+    (Array.isArray(items) ? items : []).map(async (item) => {
+      if (typeof item === "string") {
+        const value = await kv.get(item);
+        if (!value) return null;
+        return { key: item, value } as KVItem;
+      }
+      if (item && typeof item === "object" && "value" in item) {
+        return item as KVItem;
+      }
+      return null;
+    })
+  );
+
+  const records = normalizedItems
+    .filter((item): item is KVItem => Boolean(item?.value))
+    .map((item) => parseJson<ResumeRecord | null>(item.value, null))
+    .filter((record): record is ResumeRecord => Boolean(record?.resumeId));
+
+  const filtered = userId
+    ? records.filter((record) => record.userId === userId)
+    : records;
+
+  return filtered;
 }
 
 export async function ensureTemplates(kv: KVClient): Promise<string[]> {

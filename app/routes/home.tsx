@@ -14,6 +14,8 @@ type HomeResumeCard = {
   feedback?: { overallScore?: number };
   showScore?: boolean;
   linkTo?: string;
+  createdAt?: string;
+  updatedAt?: string;
   aiPreview?: {
     name?: string;
     summary?: string;
@@ -50,12 +52,33 @@ export default function Home() {
     const loadResumes = async () => {
       setLoadingResumes(true);
 
-      const items = (await kv.list("resume:*", true)) as KVItem[];
+      const items = await kv.list("resume:*", true);
+      const normalizedItems = await Promise.all(
+        (Array.isArray(items) ? items : []).map(async (item) => {
+          if (typeof item === "string") {
+            const value = await kv.get(item);
+            if (!value) return null;
+            return { key: item, value } as KVItem;
+          }
+          if (item && typeof item === "object" && "value" in item) {
+            return item as KVItem;
+          }
+          return null;
+        })
+      );
 
       const parsedResumes =
-        items
-          ?.map((item) => {
-            const data = JSON.parse(item.value) as Record<string, unknown>;
+        normalizedItems
+          .filter((item): item is KVItem => Boolean(item?.value))
+          .flatMap((item) => {
+            let data: Record<string, unknown>;
+            try {
+              data = JSON.parse(item.value) as Record<string, unknown>;
+            } catch {
+              return [];
+            }
+
+            const cards: HomeResumeCard[] = [];
 
             // AI resume builder records do not have imagePath; build a text preview.
             if (data.aiGeneratedResume && typeof data.aiGeneratedResume === "object") {
@@ -66,37 +89,75 @@ export default function Home() {
                 : [];
               const id = String(data.resumeId || data.id || "");
 
-              return {
-                id,
+              cards.push({
+                id: id ? `${id}-ai` : "",
                 companyName: "AI Resume",
                 jobTitle: String(header.name || "Generated from AI Builder"),
                 showScore: false,
                 linkTo: `/ai-resume-builder?resumeId=${id}`,
+                createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+                updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
                 aiPreview: {
                   name: String(header.name || ""),
                   summary: String(ai.summary || ""),
                   skills,
                 },
-              } satisfies HomeResumeCard;
+              } satisfies HomeResumeCard);
+            }
+
+            if (data.improvedResume && typeof data.improvedResume === "object") {
+              const improved = data.improvedResume as Record<string, unknown>;
+              const header = (improved.header || {}) as Record<string, unknown>;
+              const skills = Array.isArray(improved.skills)
+                ? improved.skills.map((skill) => String(skill))
+                : [];
+              const baseId = String(data.id || data.resumeId || "");
+
+              cards.push({
+                id: baseId ? `${baseId}-improved` : "",
+                companyName: typeof data.companyName === "string" ? data.companyName : "Improved Resume",
+                jobTitle: String(header.fullName || header.name || "Resume Builder"),
+                showScore: false,
+                linkTo: `/resume-builder/${baseId}?from=home`,
+                createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+                updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+                aiPreview: {
+                  name: String(header.fullName || header.name || ""),
+                  summary: String(improved.summary || ""),
+                  skills,
+                },
+              } satisfies HomeResumeCard);
             }
 
             const legacyId = String(data.id || data.resumeId || "");
-            return {
-              id: legacyId,
-              companyName: typeof data.companyName === "string" ? data.companyName : undefined,
-              jobTitle: typeof data.jobTitle === "string" ? data.jobTitle : undefined,
-              imagePath: typeof data.imagePath === "string" ? data.imagePath : undefined,
-              feedback:
-                data.feedback && typeof data.feedback === "object"
-                  ? (data.feedback as { overallScore?: number })
-                  : undefined,
-              showScore: typeof (data.feedback as { overallScore?: unknown } | undefined)?.overallScore === "number",
-              linkTo: `/resume/${legacyId}`,
-            } satisfies HomeResumeCard;
-          })
-          .filter((item) => item.id) || [];
+            if (legacyId && (data.imagePath || data.jobTitle || data.companyName)) {
+              cards.push({
+                id: legacyId,
+                companyName: typeof data.companyName === "string" ? data.companyName : undefined,
+                jobTitle: typeof data.jobTitle === "string" ? data.jobTitle : undefined,
+                imagePath: typeof data.imagePath === "string" ? data.imagePath : undefined,
+                feedback:
+                  data.feedback && typeof data.feedback === "object"
+                    ? (data.feedback as { overallScore?: number })
+                    : undefined,
+                showScore: typeof (data.feedback as { overallScore?: unknown } | undefined)?.overallScore === "number",
+                linkTo: `/resume/${legacyId}`,
+                createdAt: typeof data.createdAt === "string" ? data.createdAt : undefined,
+                updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined,
+              } satisfies HomeResumeCard);
+            }
 
-      setResumes(parsedResumes);
+            return cards;
+          })
+          .filter((item): item is HomeResumeCard => Boolean(item?.id)) || [];
+
+      const sortedResumes = [...parsedResumes].sort((a, b) => {
+        const aDate = a.updatedAt ? Date.parse(a.updatedAt) : a.createdAt ? Date.parse(a.createdAt) : 0;
+        const bDate = b.updatedAt ? Date.parse(b.updatedAt) : b.createdAt ? Date.parse(b.createdAt) : 0;
+        return bDate - aDate;
+      });
+
+      setResumes(sortedResumes);
       setLoadingResumes(false);
     };
 

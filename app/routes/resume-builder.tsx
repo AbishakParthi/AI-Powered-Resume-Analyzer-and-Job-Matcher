@@ -56,6 +56,13 @@ const fromLineText = (value: string) =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+const getUserId = (user: unknown): string => {
+  if (!user || typeof user !== "object") return "";
+  const candidate =
+    (user as any).id || (user as any).uuid || (user as any).username || "";
+  return typeof candidate === "string" ? candidate : "";
+};
+
 const toExperienceText = (items: ImprovedResumeExperienceItem[]) =>
   items
     .map((item) => {
@@ -167,6 +174,7 @@ export default function ResumeBuilder() {
   const [dragFromSection, setDragFromSection] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const autoTypeTriggered = useRef(false);
+  const autoScrollTriggered = useRef(false);
 
   const updateHeaderLink = (index: number, value: string) => {
     setResume((prev) => {
@@ -363,6 +371,16 @@ export default function ResumeBuilder() {
   }, [isTyping, typingTarget]);
 
   useEffect(() => {
+    if (!isTyping || !previewRef.current) return;
+    if (autoScrollTriggered.current) return;
+    if (typeof window === "undefined") return;
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (!isMobile) return;
+    autoScrollTriggered.current = true;
+    previewRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [isTyping]);
+
+  useEffect(() => {
     if (!isTyping || !typingTarget) return;
     const total = getTypingTotalLength(typingTarget);
     if (typingProgress >= total) {
@@ -376,6 +394,7 @@ export default function ResumeBuilder() {
     if (isTyping) return;
     setIsImproving(false);
     setImprovePendingDone(false);
+    autoScrollTriggered.current = false;
   }, [improvePendingDone, isTyping]);
 
   const toggleSection = (section: string) => {
@@ -419,6 +438,10 @@ export default function ResumeBuilder() {
       toast.error("Resume not found. Build or load a resume first.");
       return;
     }
+    if (!auth.user) {
+      toast.error("Please sign in to save changes.");
+      return;
+    }
     const hasExperience = resume.experience.some(
       (item) =>
         item.role.trim() ||
@@ -451,13 +474,29 @@ export default function ResumeBuilder() {
       const raw = await kv.get(`resume:${id}`);
       if (!raw) throw new Error("Resume record not found");
       const parsed = JSON.parse(raw) as Resume;
+      const userId = getUserId(auth.user);
+      const now = new Date().toISOString();
       parsed.improvedResume = {
         ...resume,
         selectedTemplate,
         availableTemplates,
         customization,
       };
-      await kv.set(`resume:${id}`, JSON.stringify(parsed));
+      if (!parsed.id) {
+        parsed.id = id;
+      }
+      if (userId && !(parsed as any).userId) {
+        (parsed as any).userId = userId;
+      }
+      if (!(parsed as any).createdAt) {
+        (parsed as any).createdAt = now;
+      }
+      (parsed as any).updatedAt = now;
+      const saved = await kv.set(`resume:${id}`, JSON.stringify(parsed));
+      if (!saved) {
+        throw new Error("Failed to save resume");
+      }
+      toast.success("Resume saved.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Save failed";
       setPageError(message);
@@ -678,9 +717,14 @@ export default function ResumeBuilder() {
     <main className="bg-[linear-gradient(145deg,#f8fafc_0%,#eef2ff_42%,#fef9c3_100%)] min-h-screen p-4 sm:p-8">
       <div className="max-w-350 mx-auto flex flex-col gap-4">
         <nav className="resume-nav bg-white rounded-xl">
-          <Link to={`/resume/${id}`} className="back-button bg-blue-600 hover:bg-blue-700">
+          <Link
+            to={searchParams.get("from") === "home" ? "/" : `/resume/${id}`}
+            className="back-button bg-blue-600 hover:bg-blue-700"
+          >
             <img src="/icons/back.svg" alt="back" className="w-2.5 h-2.5" />
-            <span className="text-white text-sm font-semibold">Back to Resume Review</span>
+            <span className="text-white text-sm font-semibold">
+              {searchParams.get("from") === "home" ? "Back to Home" : "Back to Resume Review"}
+            </span>
           </Link>
           AI Resume Builder
         </nav>

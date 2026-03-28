@@ -123,6 +123,8 @@ export default function AIResumeBuilderPage() {
   const [userResumes, setUserResumes] = useState<ResumeRecord[]>([]);
   const [dragFromSection, setDragFromSection] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const autoScrollTriggered = useRef(false);
+  const autoScrollBuildTriggered = useRef(false);
   const requestedResumeId = searchParams.get("resumeId") || "";
 
   const handleAddExperience = () => {
@@ -248,6 +250,26 @@ export default function AIResumeBuilderPage() {
   }, [isTyping, typingTarget]);
 
   useEffect(() => {
+    if (!isBuilding || !previewRef.current) return;
+    if (autoScrollBuildTriggered.current) return;
+    if (typeof window === "undefined") return;
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (!isMobile) return;
+    autoScrollBuildTriggered.current = true;
+    previewRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [isBuilding]);
+
+  useEffect(() => {
+    if (!isTyping || !previewRef.current) return;
+    if (autoScrollTriggered.current) return;
+    if (typeof window === "undefined") return;
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    if (!isMobile) return;
+    autoScrollTriggered.current = true;
+    previewRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [isTyping]);
+
+  useEffect(() => {
     if (!isTyping || !typingTarget) return;
     const total = getTypingTotalLength(typingTarget);
     if (typingProgress >= total) {
@@ -261,6 +283,8 @@ export default function AIResumeBuilderPage() {
     if (isTyping) return;
     setIsBuilding(false);
     setBuildPendingDone(false);
+    autoScrollTriggered.current = false;
+    autoScrollBuildTriggered.current = false;
   }, [buildPendingDone, isTyping]);
 
   const parseJsonFromAiResponse = (value: unknown): Record<string, unknown> => {
