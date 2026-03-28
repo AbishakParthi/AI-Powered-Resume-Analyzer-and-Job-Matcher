@@ -64,6 +64,14 @@ The containerized application can be deployed to any platform that supports Dock
 - Fly.io
 - Railway
 
+### Render Backend Deployment
+
+This repo includes a `render.yaml` that deploys the Express API in `backend/`.
+
+1. Create a new Render web service from this repo (Render will detect `render.yaml`).
+2. Set required environment variables in Render: `OPENAI_API_KEY`, `CORS_ORIGIN` (comma-separated list of allowed frontend origins), and optional `OPENAI_MODEL` (defaults to `gpt-4.1-mini`).
+3. Deploy. The backend will bind to the Render-provided `PORT`.
+
 ### DIY Deployment
 
 If you're familiar with deploying Node applications, the built-in app server is production-ready.

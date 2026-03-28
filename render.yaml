@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: resumeanalyzer-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node backend/src/server.js
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: OPENAI_API_KEY
+        sync: false
+
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+
+      - key: CORS_ORIGIN
+        sync: false
