@@ -16,6 +16,7 @@ import {
 } from "~/lib/resume-builder-types";
 import ResumeRenderer from "~/components/ResumeRenderer";
 import TemplateSelector from "~/components/TemplateSelector";
+import { buildTypedResumeData, getTypingTotalLength } from "~/lib/typingResume";
 import {
   ensureTemplates,
   getResume,
@@ -112,8 +113,12 @@ export default function AIResumeBuilderPage() {
   const [customization, setCustomization] =
     useState<ResumeCustomization>(DEFAULT_CUSTOMIZATION);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [buildPendingDone, setBuildPendingDone] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingProgress, setTypingProgress] = useState(0);
+  const [typingTarget, setTypingTarget] = useState<AIResumeDocument | null>(null);
   const [error, setError] = useState("");
   const [userResumes, setUserResumes] = useState<ResumeRecord[]>([]);
   const [dragFromSection, setDragFromSection] = useState<string | null>(null);
@@ -203,6 +208,61 @@ export default function AIResumeBuilderPage() {
     [customization.sectionOrder, customization.hiddenSections]
   );
 
+  const buildPreviewData = (
+    source: AIResumeDocument,
+    visibleSections: string[]
+  ): AIResumeDocument => ({
+    ...source,
+    experience: visibleSections.includes("experience") ? source.experience : [],
+    projects: visibleSections.includes("projects") ? source.projects : [],
+    skills: visibleSections.includes("skills") ? source.skills : [],
+    education: visibleSections.includes("education") ? source.education : [],
+    certifications: visibleSections.includes("certifications")
+      ? source.certifications
+      : [],
+    summary: visibleSections.includes("summary") ? source.summary : "",
+  });
+
+  const previewData = useMemo(
+    () => buildPreviewData(resumeData, visibleSectionOrder),
+    [resumeData, visibleSectionOrder]
+  );
+
+  const typedPreviewData = useMemo(
+    () =>
+      typingTarget ? buildTypedResumeData(typingTarget, typingProgress) : previewData,
+    [typingTarget, typingProgress, previewData]
+  );
+
+  useEffect(() => {
+    if (!isTyping || !typingTarget) return;
+    const total = getTypingTotalLength(typingTarget);
+    if (total === 0) {
+      setIsTyping(false);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setTypingProgress((prev) => Math.min(prev + 3, total));
+    }, 20);
+    return () => window.clearInterval(interval);
+  }, [isTyping, typingTarget]);
+
+  useEffect(() => {
+    if (!isTyping || !typingTarget) return;
+    const total = getTypingTotalLength(typingTarget);
+    if (typingProgress >= total) {
+      const timeout = window.setTimeout(() => setIsTyping(false), 300);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [isTyping, typingProgress, typingTarget]);
+
+  useEffect(() => {
+    if (!buildPendingDone) return;
+    if (isTyping) return;
+    setIsBuilding(false);
+    setBuildPendingDone(false);
+  }, [buildPendingDone, isTyping]);
+
   const parseJsonFromAiResponse = (value: unknown): Record<string, unknown> => {
     if (typeof value !== "string") {
       throw new Error("AI returned invalid response format");
@@ -267,7 +327,12 @@ export default function AIResumeBuilderPage() {
   };
 
   const handleBuild = async () => {
+    let scheduledTyping = false;
     setError("");
+    setIsTyping(false);
+    setTypingProgress(0);
+    setTypingTarget(null);
+    setBuildPendingDone(false);
     if (!auth.user) return;
     const userId = getUserId(auth.user);
     if (!userId) {
@@ -341,8 +406,7 @@ Return STRICT JSON ONLY with this schema:
         updatedAt: now,
       };
 
-      setResumeId(record.resumeId);
-      setResumeData({
+      const normalizedResume = {
         ...record.aiGeneratedResume,
         experience:
           record.aiGeneratedResume.experience?.length
@@ -352,7 +416,17 @@ Return STRICT JSON ONLY with this schema:
           record.aiGeneratedResume.projects?.length
             ? record.aiGeneratedResume.projects
             : [{ title: "", description: "", technologies: [], bullets: [] }],
-      });
+      };
+
+      const nextPreview = buildPreviewData(normalizedResume, visibleSectionOrder);
+      setTypingTarget(nextPreview);
+      setTypingProgress(0);
+      setIsTyping(true);
+      setBuildPendingDone(true);
+      scheduledTyping = true;
+
+      setResumeId(record.resumeId);
+      setResumeData(normalizedResume);
       setSkillsText(toLines(record.aiGeneratedResume.skills || []));
       setEducationText(toEducationLines(record.aiGeneratedResume.education || []));
       setCertificationsText(toLines(record.aiGeneratedResume.certifications || []));
@@ -364,8 +438,12 @@ Return STRICT JSON ONLY with this schema:
       setUserResumes(nextList.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to build resume");
-    } finally {
       setIsBuilding(false);
+      setBuildPendingDone(false);
+    } finally {
+      if (!scheduledTyping) {
+        setIsBuilding(false);
+      }
     }
   };
 
@@ -977,32 +1055,26 @@ Return STRICT JSON ONLY with this schema:
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto">
-              <div ref={previewRef} style={exportSafeColorVars} className="mx-auto w-full max-w-198.5">
-                <ResumeRenderer
-                  selectedTemplate={selectedTemplate}
-                  data={{
-                    ...resumeData,
-                    experience: visibleSectionOrder.includes("experience")
-                      ? resumeData.experience
-                      : [],
-                    projects: visibleSectionOrder.includes("projects")
-                      ? resumeData.projects
-                      : [],
-                    skills: visibleSectionOrder.includes("skills")
-                      ? resumeData.skills
-                      : [],
-                    education: visibleSectionOrder.includes("education")
-                      ? resumeData.education
-                      : [],
-                    certifications: visibleSectionOrder.includes("certifications")
-                      ? resumeData.certifications
-                      : [],
-                    summary: visibleSectionOrder.includes("summary")
-                      ? resumeData.summary
-                      : "",
-                  }}
-                  customization={customization}
-                />
+              <div className="relative">
+                {isBuilding && !isTyping && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl">
+                    <div className="flex items-center gap-3 text-sm font-semibold text-gray-700">
+                      <span>Building resume</span>
+                      <span className="typing-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <div ref={previewRef} style={exportSafeColorVars} className="mx-auto w-full max-w-198.5">
+                  <ResumeRenderer
+                    selectedTemplate={selectedTemplate}
+                    data={isTyping ? typedPreviewData : previewData}
+                    customization={customization}
+                  />
+                </div>
               </div>
             </div>
           </div>

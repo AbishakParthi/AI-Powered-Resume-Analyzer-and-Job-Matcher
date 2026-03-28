@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import type { CSSProperties } from "react";
 import type { ChangeEvent } from "react";
 import { toast } from "react-toastify";
@@ -8,6 +8,7 @@ import { improveResume as improveResumeApi } from "~/lib/api";
 import { extractTextFromPdfFile } from "~/lib/pdf2img";
 import TemplateSelector from "~/components/TemplateSelector";
 import ResumeRenderer from "~/components/ResumeRenderer";
+import { buildTypedResumeData, getTypingTotalLength } from "~/lib/typingResume";
 import type {
   AIResumeDocument,
   ResumeCustomization,
@@ -134,6 +135,7 @@ const exportSafeColorVars: CSSProperties = {
 export default function ResumeBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { auth, isLoading, kv, fs } = usePuterStore();
   const [resume, setResume] = useState<ImprovedResume>(defaultImprovedResume);
   const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplateId>("modern");
@@ -154,12 +156,17 @@ export default function ResumeBuilder() {
   const [experienceText, setExperienceText] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isImproving, setIsImproving] = useState(false);
+  const [improvePendingDone, setImprovePendingDone] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingProgress, setTypingProgress] = useState(0);
+  const [typingTarget, setTypingTarget] = useState<AIResumeDocument | null>(null);
   const [pageError, setPageError] = useState("");
   const [customization, setCustomization] =
     useState<ResumeCustomization>(DEFAULT_CUSTOMIZATION);
   const [dragFromSection, setDragFromSection] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const autoTypeTriggered = useRef(false);
 
   const updateHeaderLink = (index: number, value: string) => {
     setResume((prev) => {
@@ -240,6 +247,23 @@ export default function ResumeBuilder() {
         setPageError("No improved resume available. Build it from Resume Review first.");
         return;
       }
+      const shouldAutoType = searchParams.get("typing") === "1";
+      if (shouldAutoType && !autoTypeTriggered.current) {
+        const initialCustomization =
+          parsed.improvedResume.customization || DEFAULT_CUSTOMIZATION;
+        const visibleSections = initialCustomization.sectionOrder.filter(
+          (section) => !initialCustomization.hiddenSections.includes(section)
+        );
+        const autoPreview = buildPreviewData(
+          parsed.improvedResume,
+          visibleSections,
+          parsed.improvedResume.skills || []
+        );
+        setTypingTarget(autoPreview);
+        setTypingProgress(0);
+        setIsTyping(true);
+        autoTypeTriggered.current = true;
+      }
       setResume(parsed.improvedResume);
       setSelectedTemplate(parsed.improvedResume.selectedTemplate || "modern");
       const loadedTemplates = parsed.improvedResume.availableTemplates?.length
@@ -256,7 +280,7 @@ export default function ResumeBuilder() {
     };
 
     loadResume();
-  }, [id, kv]);
+  }, [id, kv, searchParams]);
 
   const previewSkills = useMemo(() => resume.skills.filter(Boolean), [resume.skills]);
   const visibleSectionOrder = useMemo(
@@ -266,52 +290,93 @@ export default function ResumeBuilder() {
       ),
     [customization.sectionOrder, customization.hiddenSections]
   );
+  const buildPreviewData = (
+    source: ImprovedResume,
+    visibleSections: string[],
+    skills: string[]
+  ): AIResumeDocument => ({
+    header: {
+      name: source.header.fullName,
+      title: source.header.title,
+      email: source.header.email,
+      phone: source.header.phone,
+      location: source.header.location,
+      linkedin: source.header.links?.[0] || "",
+      portfolio: source.header.links?.[1] || "",
+    },
+    summary: visibleSections.includes("summary") ? source.summary : "",
+    experience: visibleSections.includes("experience")
+      ? source.experience.map((item) => ({
+          title: item.role,
+          company: item.company,
+          duration: item.duration,
+          bullets: item.bullets,
+        }))
+      : [],
+    projects: visibleSections.includes("projects")
+      ? source.projects.map((item) => ({
+          title: item.name,
+          description: item.bullets?.[0] || "",
+          technologies: item.techStack || [],
+          bullets: item.bullets || [],
+        }))
+      : [],
+    skills: visibleSections.includes("skills") ? skills : [],
+    education: visibleSections.includes("education")
+      ? source.education
+          ? source.education
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((line) => ({ details: line }))
+          : []
+      : [],
+    certifications: visibleSections.includes("certifications")
+      ? source.certifications || []
+      : [],
+    keywordsUsed: [],
+    estimatedATSScore: source.improvedScoreEstimate || 0,
+  });
+
   const previewData = useMemo<AIResumeDocument>(
-    () => ({
-      header: {
-        name: resume.header.fullName,
-        title: resume.header.title,
-        email: resume.header.email,
-        phone: resume.header.phone,
-        location: resume.header.location,
-        linkedin: resume.header.links?.[0] || "",
-        portfolio: resume.header.links?.[1] || "",
-      },
-      summary: visibleSectionOrder.includes("summary") ? resume.summary : "",
-      experience: visibleSectionOrder.includes("experience")
-        ? resume.experience.map((item) => ({
-            title: item.role,
-            company: item.company,
-            duration: item.duration,
-            bullets: item.bullets,
-          }))
-        : [],
-      projects: visibleSectionOrder.includes("projects")
-        ? resume.projects.map((item) => ({
-            title: item.name,
-            description: item.bullets?.[0] || "",
-            technologies: item.techStack || [],
-            bullets: item.bullets || [],
-          }))
-        : [],
-      skills: visibleSectionOrder.includes("skills") ? previewSkills : [],
-      education: visibleSectionOrder.includes("education")
-        ? resume.education
-            ? resume.education
-                .split("\n")
-                .map((line) => line.trim())
-                .filter(Boolean)
-                .map((line) => ({ details: line }))
-            : []
-        : [],
-      certifications: visibleSectionOrder.includes("certifications")
-        ? resume.certifications || []
-        : [],
-      keywordsUsed: [],
-      estimatedATSScore: resume.improvedScoreEstimate || 0,
-    }),
+    () => buildPreviewData(resume, visibleSectionOrder, previewSkills),
     [resume, previewSkills, visibleSectionOrder]
   );
+
+  const typedPreviewData = useMemo(
+    () =>
+      typingTarget ? buildTypedResumeData(typingTarget, typingProgress) : previewData,
+    [typingTarget, typingProgress, previewData]
+  );
+
+  useEffect(() => {
+    if (!isTyping || !typingTarget) return;
+    const total = getTypingTotalLength(typingTarget);
+    if (total === 0) {
+      setIsTyping(false);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setTypingProgress((prev) => Math.min(prev + 3, total));
+    }, 20);
+    return () => window.clearInterval(interval);
+  }, [isTyping, typingTarget]);
+
+  useEffect(() => {
+    if (!isTyping || !typingTarget) return;
+    const total = getTypingTotalLength(typingTarget);
+    if (typingProgress >= total) {
+      const timeout = window.setTimeout(() => setIsTyping(false), 300);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [isTyping, typingProgress, typingTarget]);
+
+  useEffect(() => {
+    if (!improvePendingDone) return;
+    if (isTyping) return;
+    setIsImproving(false);
+    setImprovePendingDone(false);
+  }, [improvePendingDone, isTyping]);
 
   const toggleSection = (section: string) => {
     setCustomization((prev) => {
@@ -431,6 +496,7 @@ export default function ResumeBuilder() {
   };
 
   const handleImproveWithAi = async () => {
+    let scheduledTyping = false;
     if (!id) return;
     if (!resume.header.fullName.trim()) {
       toast.error("Full name can't be empty.");
@@ -440,6 +506,10 @@ export default function ResumeBuilder() {
       toast.error("Email can't be empty.");
       return;
     }
+    setIsTyping(false);
+    setTypingProgress(0);
+    setTypingTarget(null);
+    setImprovePendingDone(false);
     setIsImproving(true);
     setPageError("");
 
@@ -514,6 +584,17 @@ export default function ResumeBuilder() {
         customization,
       };
 
+      const nextPreview = buildPreviewData(
+        nextImprovedResume,
+        visibleSectionOrder,
+        nextImprovedResume.skills || []
+      );
+      setTypingTarget(nextPreview);
+      setTypingProgress(0);
+      setIsTyping(true);
+      setImprovePendingDone(true);
+      scheduledTyping = true;
+
       setResume(nextImprovedResume);
       setSkillsText(toLineText(nextImprovedResume.skills || []));
       setExperienceText(toExperienceText(nextImprovedResume.experience || []));
@@ -530,8 +611,12 @@ export default function ResumeBuilder() {
       const message =
         error instanceof Error ? error.message : "Failed to improve resume with AI";
       setPageError(message);
-    } finally {
       setIsImproving(false);
+      setImprovePendingDone(false);
+    } finally {
+      if (!scheduledTyping) {
+        setIsImproving(false);
+      }
     }
   };
 
@@ -932,17 +1017,31 @@ export default function ResumeBuilder() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit">
-            <div
-              ref={previewRef}
-              data-export-root="resume-preview"
-              style={exportSafeColorVars}
-              className="mx-auto bg-white text-black max-w-198.5"
-            >
-              <ResumeRenderer
-                selectedTemplate={selectedTemplate}
-                data={previewData}
-                customization={customization}
-              />
+            <div className="relative">
+              {isImproving && !isTyping && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl">
+                  <div className="flex items-center gap-3 text-sm font-semibold text-gray-700">
+                    <span>Improving resume</span>
+                    <span className="typing-dots" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div
+                ref={previewRef}
+                data-export-root="resume-preview"
+                style={exportSafeColorVars}
+                className="mx-auto bg-white text-black max-w-198.5"
+              >
+                <ResumeRenderer
+                  selectedTemplate={selectedTemplate}
+                  data={isTyping ? typedPreviewData : previewData}
+                  customization={customization}
+                />
+              </div>
             </div>
           </div>
         </section>

@@ -289,7 +289,7 @@ Return ONLY valid JSON.`,
 
       await kv.set(`resume:${id}`, JSON.stringify(parsed));
 
-      navigate(`/resume-builder/${id}`);
+      navigate(`/resume-builder/${id}?typing=1`);
     } catch (error) {
       setImproveError(error instanceof Error ? error.message : "Failed to build improved resume");
     } finally {
