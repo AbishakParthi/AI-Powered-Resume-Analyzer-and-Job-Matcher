@@ -156,6 +156,141 @@ function hasCoreSections(resume) {
   );
 }
 
+function extractExperienceFromParsedText(parsedText) {
+  if (typeof parsedText !== "string" || !parsedText.trim()) return [];
+  const lines = parsedText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const headingLabels = [
+    "EXPERIENCE",
+    "WORK EXPERIENCE",
+    "PROFESSIONAL EXPERIENCE",
+    "INTERNSHIP",
+    "INTERNSHIPS",
+    "ACADEMIC PROJECTS",
+    "PROJECTS",
+  ];
+
+  const normalize = (value) =>
+    value
+      .toUpperCase()
+      .replace(/[^A-Z\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const normalizedHeadings = headingLabels.map((h) => normalize(h));
+  const normalizedLines = lines.map((line) => normalize(line));
+  const sectionIndex = normalizedLines.findIndex((line) =>
+    normalizedHeadings.includes(line)
+  );
+  if (sectionIndex === -1) return [];
+
+  const isHeadingLine = (line) => {
+    const normalized = normalize(line);
+    if (!normalized) return false;
+    if (normalizedHeadings.includes(normalized)) return true;
+    return line === line.toUpperCase() && line.length <= 40;
+  };
+
+  const sectionLines = [];
+  for (let i = sectionIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (isHeadingLine(line)) break;
+    sectionLines.push(line);
+  }
+
+  const bullets = sectionLines
+    .map((line) => line.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean);
+
+  if (bullets.length === 0) return [];
+
+  const heading = normalizedLines[sectionIndex];
+  const role =
+    heading.includes("PROJECT") || heading.includes("ACADEMIC")
+      ? "Academic Projects"
+      : "Experience";
+
+  return [
+    {
+      company: "",
+      role,
+      duration: "",
+      location: "",
+      bullets: bullets.slice(0, 6),
+    },
+  ];
+}
+
+function buildExperienceFallback(resume, parsedText) {
+  const extracted = extractExperienceFromParsedText(parsedText);
+  if (extracted.length) return extracted;
+
+  const projects = Array.isArray(resume?.projects) ? resume.projects : [];
+  const skills = Array.isArray(resume?.skills) ? resume.skills : [];
+  const education = typeof resume?.education === "string" ? resume.education.trim() : "";
+
+  const bulletsFromProjects = [];
+  for (const project of projects) {
+    if (!project || typeof project !== "object") continue;
+    const name = typeof project.name === "string" ? project.name.trim() : "";
+    const techStack = Array.isArray(project.techStack)
+      ? project.techStack.filter((t) => typeof t === "string" && t.trim())
+      : [];
+    const bullets = Array.isArray(project.bullets)
+      ? project.bullets.filter((b) => typeof b === "string" && b.trim())
+      : [];
+
+    if (bullets.length) {
+      bulletsFromProjects.push(...bullets);
+    } else if (name || techStack.length) {
+      const techLabel = techStack.length ? ` (${techStack.join(", ")})` : "";
+      bulletsFromProjects.push(`${name || "Project"}${techLabel}`);
+    }
+  }
+
+  if (bulletsFromProjects.length) {
+    return [
+      {
+        company: "",
+        role: "Project Experience",
+        duration: "",
+        location: "",
+        bullets: bulletsFromProjects.slice(0, 6),
+      },
+    ];
+  }
+
+  if (skills.length) {
+    return [
+      {
+        company: "",
+        role: "Skills-Based Experience",
+        duration: "",
+        location: "",
+        bullets: [`Skills: ${skills.slice(0, 12).join(", ")}`],
+      },
+    ];
+  }
+
+  if (education) {
+    return [
+      {
+        company: "",
+        role: "Academic Experience",
+        duration: "",
+        location: "",
+        bullets: [`Education: ${education}`],
+      },
+    ];
+  }
+
+  return [];
+}
+
 function normalizeFallbackFromOriginal(originalResume) {
   if (!originalResume || typeof originalResume !== "object") {
     return normalizeImprovedResume({});
@@ -294,6 +429,15 @@ ${modelText}`,
       }
     } catch {
       // Keep first-pass result with fallbacks if retry fails.
+    }
+  }
+
+  if (!hasNonEmptyExperience(improvedResumeMerged.experience)) {
+    const parsedText =
+      typeof originalResume?.parsedText === "string" ? originalResume.parsedText : "";
+    const fallbackExperience = buildExperienceFallback(improvedResumeMerged, parsedText);
+    if (fallbackExperience.length) {
+      improvedResumeMerged = { ...improvedResumeMerged, experience: fallbackExperience };
     }
   }
   const versionHistory = Array.isArray(previousVersionHistory)

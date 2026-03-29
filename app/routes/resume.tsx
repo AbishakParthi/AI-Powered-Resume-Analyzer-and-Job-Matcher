@@ -321,7 +321,7 @@ Return ONLY valid JSON.`,
                 <div className="flex flex-col gap-3">
                     <button
                         type="button"
-                        className="primary-button max-w-fit px-6"
+                        className={isImproving ? "primary-button max-w-fit px-6 animate-pulse" : "primary-button max-w-fit px-6"}
                         onClick={handleBuildImprovedResume}
                         disabled={isImproving}
                     >

@@ -108,14 +108,26 @@ const fromExperienceText = (value: string): ImprovedResumeExperienceItem[] =>
         .map((line) => line.replace(/^[-*]\s*/, "").trim())
         .filter(Boolean);
 
-      return { company, role, duration, location, bullets };
-    });
+    return { company, role, duration, location, bullets };
+  });
 
 const reorder = (list: string[], from: number, to: number) => {
   const next = [...list];
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
   return next;
+};
+
+const hasNonEmptyExperience = (items: ImprovedResumeExperienceItem[]): boolean => {
+  if (!Array.isArray(items) || items.length === 0) return false;
+  return items.some((item) => {
+    const role = typeof item.role === "string" ? item.role.trim() : "";
+    const company = typeof item.company === "string" ? item.company.trim() : "";
+    const bullets = Array.isArray(item.bullets)
+      ? item.bullets.filter((b) => typeof b === "string" && b.trim())
+      : [];
+    return Boolean(role || company || bullets.length);
+  });
 };
 
 const fileToDataUrl = (file: File) =>
@@ -158,6 +170,25 @@ export default function ResumeBuilder() {
     templates.filter((template): template is ResumeTemplateId =>
       ["modern", "minimal", "corporate", "creative", "photo-pro"].includes(template)
     );
+  const normalizeCustomization = (input?: ResumeCustomization): ResumeCustomization => {
+    const base = input ?? DEFAULT_CUSTOMIZATION;
+    const order =
+      Array.isArray(base.sectionOrder) && base.sectionOrder.length > 0
+        ? base.sectionOrder
+        : DEFAULT_CUSTOMIZATION.sectionOrder;
+    const normalizedOrder = Array.from(
+      new Set([...order, ...DEFAULT_CUSTOMIZATION.sectionOrder])
+    );
+    const hidden = Array.isArray(base.hiddenSections)
+      ? base.hiddenSections.filter((section) => normalizedOrder.includes(section))
+      : [];
+    return {
+      ...DEFAULT_CUSTOMIZATION,
+      ...base,
+      sectionOrder: normalizedOrder,
+      hiddenSections: hidden,
+    };
+  };
   const [skillsText, setSkillsText] = useState("");
   const [certificationsText, setCertificationsText] = useState("");
   const [experienceText, setExperienceText] = useState("");
@@ -175,6 +206,18 @@ export default function ResumeBuilder() {
   const previewRef = useRef<HTMLDivElement>(null);
   const autoTypeTriggered = useRef(false);
   const autoScrollTriggered = useRef(false);
+  const hasExperienceContent = useMemo(
+    () =>
+      resume.experience.some((item) => {
+        const role = typeof item.role === "string" ? item.role.trim() : "";
+        const company = typeof item.company === "string" ? item.company.trim() : "";
+        const bullets = Array.isArray(item.bullets)
+          ? item.bullets.filter((b) => typeof b === "string" && b.trim())
+          : [];
+        return Boolean(role || company || bullets.length);
+      }),
+    [resume.experience]
+  );
 
   const updateHeaderLink = (index: number, value: string) => {
     setResume((prev) => {
@@ -257,8 +300,9 @@ export default function ResumeBuilder() {
       }
       const shouldAutoType = searchParams.get("typing") === "1";
       if (shouldAutoType && !autoTypeTriggered.current) {
-        const initialCustomization =
-          parsed.improvedResume.customization || DEFAULT_CUSTOMIZATION;
+        const initialCustomization = normalizeCustomization(
+          parsed.improvedResume.customization
+        );
         const visibleSections = initialCustomization.sectionOrder.filter(
           (section) => !initialCustomization.hiddenSections.includes(section)
         );
@@ -281,7 +325,7 @@ export default function ResumeBuilder() {
         Array.from(new Set([...loadedTemplates, "photo-pro"]))
       );
       setAvailableTemplates(normalizedTemplates);
-      setCustomization(parsed.improvedResume.customization || DEFAULT_CUSTOMIZATION);
+      setCustomization(normalizeCustomization(parsed.improvedResume.customization));
       setSkillsText(toLineText(parsed.improvedResume.skills || []));
       setExperienceText(toExperienceText(parsed.improvedResume.experience || []));
       setCertificationsText(toLineText(parsed.improvedResume.certifications || []));
@@ -291,13 +335,14 @@ export default function ResumeBuilder() {
   }, [id, kv, searchParams]);
 
   const previewSkills = useMemo(() => resume.skills.filter(Boolean), [resume.skills]);
-  const visibleSectionOrder = useMemo(
-    () =>
-      customization.sectionOrder.filter(
-        (section) => !customization.hiddenSections.includes(section)
-      ),
-    [customization.sectionOrder, customization.hiddenSections]
-  );
+  const visibleSectionOrder = useMemo(() => {
+    const effectiveHidden = customization.hiddenSections.filter(
+      (section) => !(section === "experience" && hasExperienceContent)
+    );
+    return customization.sectionOrder.filter(
+      (section) => !effectiveHidden.includes(section)
+    );
+  }, [customization.sectionOrder, customization.hiddenSections, hasExperienceContent]);
   const buildPreviewData = (
     source: ImprovedResume,
     visibleSections: string[],
@@ -616,11 +661,18 @@ export default function ResumeBuilder() {
         versionHistory: parsed.versionHistory,
       });
 
+      const fallbackExperience = hasNonEmptyExperience(result.improvedResume?.experience || [])
+        ? result.improvedResume.experience
+        : hasNonEmptyExperience(resume.experience)
+        ? resume.experience
+        : parsed.improvedResume?.experience || [];
+
       const nextImprovedResume: ImprovedResume = {
         ...result.improvedResume,
+        experience: fallbackExperience,
         selectedTemplate,
         availableTemplates,
-        customization,
+        customization: normalizeCustomization(customization),
       };
 
       const nextPreview = buildPreviewData(
@@ -672,6 +724,38 @@ export default function ResumeBuilder() {
     setIsDownloading(true);
     setPageError("");
     try {
+      const sourceNode = previewRef.current;
+      const exportWidth = 794;
+      const a4HeightPx = Math.round(exportWidth * (297 / 210));
+      const contentHeight = Math.max(
+        sourceNode.scrollHeight,
+        sourceNode.clientHeight,
+        a4HeightPx
+      );
+      const fitScale = Math.min(1, a4HeightPx / contentHeight);
+      const previousStyles = {
+        width: sourceNode.style.width,
+        maxWidth: sourceNode.style.maxWidth,
+        margin: sourceNode.style.margin,
+        padding: sourceNode.style.padding,
+        backgroundColor: sourceNode.style.backgroundColor,
+        boxSizing: sourceNode.style.boxSizing,
+        transform: sourceNode.style.transform,
+        transformOrigin: sourceNode.style.transformOrigin,
+      };
+
+      // Force stable print dimensions during capture.
+      sourceNode.style.width = `${exportWidth}px`;
+      sourceNode.style.maxWidth = `${exportWidth}px`;
+      sourceNode.style.margin = "0 auto";
+      sourceNode.style.padding = "0";
+      sourceNode.style.backgroundColor = "#ffffff";
+      sourceNode.style.boxSizing = "border-box";
+      if (fitScale < 1) {
+        sourceNode.style.transformOrigin = "top left";
+        sourceNode.style.transform = `scale(${Number(fitScale.toFixed(3))})`;
+      }
+
       const module = await import("html2pdf.js");
       const html2pdf = (module.default ?? module) as any;
       await html2pdf()
@@ -682,6 +766,9 @@ export default function ResumeBuilder() {
           html2canvas: {
             scale: 2,
             useCORS: true,
+            width: exportWidth,
+            windowWidth: exportWidth,
+            windowHeight: Math.max(contentHeight, a4HeightPx),
             onclone: (doc: Document) => {
               const clonedRoot = doc.querySelector("[data-export-root='resume-preview']") as HTMLElement | null;
               if (!clonedRoot) return;
@@ -709,6 +796,17 @@ export default function ResumeBuilder() {
       }
       setPageError(message);
     } finally {
+      if (previewRef.current) {
+        const sourceNode = previewRef.current;
+        sourceNode.style.width = "";
+        sourceNode.style.maxWidth = "";
+        sourceNode.style.margin = "";
+        sourceNode.style.padding = "";
+        sourceNode.style.backgroundColor = "";
+        sourceNode.style.boxSizing = "";
+        sourceNode.style.transform = "";
+        sourceNode.style.transformOrigin = "";
+      }
       setIsDownloading(false);
     }
   };

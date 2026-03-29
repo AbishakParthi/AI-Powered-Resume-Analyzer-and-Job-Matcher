@@ -51,6 +51,7 @@ Rules:
 8) If source data contains experience, skills, or education, do not leave those sections empty in output.
 9) If raw resume text is provided, extract and reconstruct all available sections from it.
 10) Prioritize complete resume output: summary, experience, skills, and education.
+11) If formal work experience is missing, create a "Project Experience" entry using existing projects/skills only. Do not invent companies or dates.
 
 Output JSON shape:
 {
