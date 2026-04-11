@@ -845,6 +845,9 @@ Rules:
         })
         .from(sourceNode)
         .save();
+      
+      // Give browser time to process download before clearing loading state
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (err) {
       setError(err instanceof Error ? err.message : "PDF generation failed");
     } finally {

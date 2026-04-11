@@ -446,16 +446,6 @@ export default function ResumeBuilder() {
   }, [isTyping, typingTarget]);
 
   useEffect(() => {
-    if (!isTyping || !previewRef.current) return;
-    if (autoScrollTriggered.current) return;
-    if (typeof window === "undefined") return;
-    const isMobile = window.matchMedia("(max-width: 767px)").matches;
-    if (!isMobile) return;
-    autoScrollTriggered.current = true;
-    previewRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [isTyping]);
-
-  useEffect(() => {
     if (!isTyping || !typingTarget) return;
     const total = getTypingTotalLength(typingTarget);
     if (typingProgress >= total) {
@@ -464,14 +454,47 @@ export default function ResumeBuilder() {
     }
   }, [isTyping, typingProgress, typingTarget]);
 
+  // Keep internal preview container scrolled to bottom during typing (like ChatGPT)
   useEffect(() => {
-    if (!isTyping || !previewScrollRef.current) return;
-    const node = previewScrollRef.current;
-    const raf = window.requestAnimationFrame(() => {
-      node.scrollTop = node.scrollHeight;
-    });
-    return () => window.cancelAnimationFrame(raf);
-  }, [isTyping, typingProgress]);
+    if (!isTyping) return;
+    if (!previewScrollRef.current) return;
+    
+    let animationId: number;
+    const scrollLoop = () => {
+      if (previewScrollRef.current) {
+        previewScrollRef.current.scrollTop = previewScrollRef.current.scrollHeight;
+      }
+      animationId = window.requestAnimationFrame(scrollLoop);
+    };
+    
+    animationId = window.requestAnimationFrame(scrollLoop);
+    return () => window.cancelAnimationFrame(animationId);
+  }, [isTyping]);
+
+  // Keep main window scrolled to preview while typing (like ChatGPT viewport following)
+  useEffect(() => {
+    if (!isTyping) return;
+    if (!previewRef.current) return;
+    
+    let animationId: number;
+    const scrollWindowLoop = () => {
+      const rect = previewRef.current?.getBoundingClientRect();
+      if (!rect) {
+        animationId = window.requestAnimationFrame(scrollWindowLoop);
+        return;
+      }
+      
+      // Keep preview visible - if it's scrolled out of view, bring it back
+      if (rect.bottom > window.innerHeight) {
+        window.scrollBy({ top: rect.bottom - window.innerHeight + 50, behavior: "auto" });
+      }
+      
+      animationId = window.requestAnimationFrame(scrollWindowLoop);
+    };
+    
+    animationId = window.requestAnimationFrame(scrollWindowLoop);
+    return () => window.cancelAnimationFrame(animationId);
+  }, [isTyping]);
 
   useEffect(() => {
     if (!improvePendingDone) return;
@@ -763,12 +786,14 @@ export default function ResumeBuilder() {
     setIsDownloading(true);
     setPageError("");
     let stopAutoScroll = () => {};
+    let resumeContentNode: HTMLElement | null = null;
+    let previousContentStyles: any = null;
     try {
       const sourceNode = previewRef.current;
       stopAutoScroll = startAutoScroll(sourceNode);
       const exportWidth = 794;
       const a4HeightPx = Math.round(exportWidth * (297 / 210));
-      const resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
+      resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
       const contentHeight = Math.max(
         sourceNode.scrollHeight,
         sourceNode.clientHeight,
@@ -791,7 +816,7 @@ export default function ResumeBuilder() {
         justifyContent: sourceNode.style.justifyContent,
         alignItems: sourceNode.style.alignItems,
       };
-      const previousContentStyles = resumeContentNode
+      previousContentStyles = resumeContentNode
         ? {
             width: resumeContentNode.style.width,
             maxWidth: resumeContentNode.style.maxWidth,
@@ -911,6 +936,9 @@ export default function ResumeBuilder() {
         })
         .from(previewRef.current)
         .save();
+      
+      // Give browser time to process download before clearing loading state
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (error) {
       let message = error instanceof Error ? error.message : "PDF generation failed";
       if (message.includes("unsupported color function") && message.includes("oklch")) {
@@ -950,7 +978,8 @@ export default function ResumeBuilder() {
           resumeContentNode.style.fontSize = previousContentStyles.fontSize;
         }
       }
-      setIsDownloading(false);
+      // Add delay to ensure download is initiated before resetting loading state
+      window.setTimeout(() => setIsDownloading(false), 1000);
     }
   };
 
@@ -1322,7 +1351,7 @@ export default function ResumeBuilder() {
                 ref={previewRef}
                 data-export-root="resume-preview"
                 style={exportSafeColorVars}
-                className="mx-auto bg-white text-black max-w-[595px]"
+                className="mx-auto bg-white text-black max-w-148.75"
               >
                 <ResumeRenderer
                   selectedTemplate={selectedTemplate}
