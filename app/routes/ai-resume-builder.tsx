@@ -1357,7 +1357,7 @@ Rules:
                   ref={previewRef}
                   data-export-root="resume-preview"
                   style={exportSafeColorVars}
-                  className="mx-auto w-full max-w-[595px]"
+                  className="mx-auto w-full max-w-148.75"
                 >
                   <ResumeRenderer
                     selectedTemplate={selectedTemplate}
