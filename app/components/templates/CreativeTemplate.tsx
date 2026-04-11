@@ -55,7 +55,7 @@ export default function CreativeTemplate({ data, customization }: TemplateProps)
 
   return (
     <article
-      className={`bg-white text-black box-border w-full max-w-198.5 p-10 mx-auto ${spacing}`}
+      className={`bg-white text-black box-border w-full max-w-[595px] p-2 mx-auto ${spacing}`}
       style={{ fontFamily: customization.fontFamily }}
     >
       <header

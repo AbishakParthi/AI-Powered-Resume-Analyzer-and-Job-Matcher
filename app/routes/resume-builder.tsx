@@ -204,8 +204,38 @@ export default function ResumeBuilder() {
     useState<ResumeCustomization>(DEFAULT_CUSTOMIZATION);
   const [dragFromSection, setDragFromSection] = useState<string | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
   const autoTypeTriggered = useRef(false);
   const autoScrollTriggered = useRef(false);
+  const startAutoScroll = (target: HTMLElement | null) => {
+    if (!target || typeof window === "undefined") return () => {};
+    const rect = target.getBoundingClientRect();
+    const startY = window.scrollY;
+    const topY = rect.top + window.scrollY - 16;
+    const bottomY = rect.bottom + window.scrollY - window.innerHeight + 16;
+    const endY = Math.max(topY, bottomY);
+    if (endY <= startY + 4) return () => {};
+    const duration = Math.min(2000, Math.max(900, rect.height * 0.6));
+    let rafId = 0;
+    let stopped = false;
+    const easeInOut = (t: number) =>
+      t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      if (stopped) return;
+      const progress = Math.min(1, (now - startTime) / duration);
+      const eased = easeInOut(progress);
+      window.scrollTo({ top: startY + (endY - startY) * eased, behavior: "auto" });
+      if (progress < 1) {
+        rafId = window.requestAnimationFrame(tick);
+      }
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      stopped = true;
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
+  };
   const hasExperienceContent = useMemo(
     () =>
       resume.experience.some((item) => {
@@ -433,6 +463,15 @@ export default function ResumeBuilder() {
       return () => window.clearTimeout(timeout);
     }
   }, [isTyping, typingProgress, typingTarget]);
+
+  useEffect(() => {
+    if (!isTyping || !previewScrollRef.current) return;
+    const node = previewScrollRef.current;
+    const raf = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [isTyping, typingProgress]);
 
   useEffect(() => {
     if (!improvePendingDone) return;
@@ -723,16 +762,20 @@ export default function ResumeBuilder() {
     if (!previewRef.current) return;
     setIsDownloading(true);
     setPageError("");
+    let stopAutoScroll = () => {};
     try {
       const sourceNode = previewRef.current;
+      stopAutoScroll = startAutoScroll(sourceNode);
       const exportWidth = 794;
       const a4HeightPx = Math.round(exportWidth * (297 / 210));
+      const resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
       const contentHeight = Math.max(
         sourceNode.scrollHeight,
         sourceNode.clientHeight,
         a4HeightPx
       );
       const fitScale = Math.min(1, a4HeightPx / contentHeight);
+      const baseScale = 1;
       const previousStyles = {
         width: sourceNode.style.width,
         maxWidth: sourceNode.style.maxWidth,
@@ -742,36 +785,115 @@ export default function ResumeBuilder() {
         boxSizing: sourceNode.style.boxSizing,
         transform: sourceNode.style.transform,
         transformOrigin: sourceNode.style.transformOrigin,
+        minHeight: sourceNode.style.minHeight,
+        display: sourceNode.style.display,
+        flexDirection: sourceNode.style.flexDirection,
+        justifyContent: sourceNode.style.justifyContent,
+        alignItems: sourceNode.style.alignItems,
       };
+      const previousContentStyles = resumeContentNode
+        ? {
+            width: resumeContentNode.style.width,
+            maxWidth: resumeContentNode.style.maxWidth,
+            margin: resumeContentNode.style.margin,
+            paddingLeft: resumeContentNode.style.paddingLeft,
+            paddingRight: resumeContentNode.style.paddingRight,
+            paddingTop: resumeContentNode.style.paddingTop,
+            paddingBottom: resumeContentNode.style.paddingBottom,
+            position: resumeContentNode.style.position,
+            left: resumeContentNode.style.left,
+            right: resumeContentNode.style.right,
+            transform: resumeContentNode.style.transform,
+            transformOrigin: resumeContentNode.style.transformOrigin,
+            fontSize: resumeContentNode.style.fontSize,
+          }
+        : null;
 
       // Force stable print dimensions during capture.
-      sourceNode.style.width = `${exportWidth}px`;
-      sourceNode.style.maxWidth = `${exportWidth}px`;
-      sourceNode.style.margin = "0 auto";
+      sourceNode.style.width = "100%";
+      sourceNode.style.maxWidth = "100%";
+      sourceNode.style.margin = "0";
       sourceNode.style.padding = "0";
       sourceNode.style.backgroundColor = "#ffffff";
       sourceNode.style.boxSizing = "border-box";
-      if (fitScale < 1) {
-        sourceNode.style.transformOrigin = "top left";
-        sourceNode.style.transform = `scale(${Number(fitScale.toFixed(3))})`;
+      sourceNode.style.minHeight = `${a4HeightPx}px`;
+      sourceNode.style.display = "flex";
+      sourceNode.style.flexDirection = "column";
+      sourceNode.style.justifyContent = "flex-start";
+      sourceNode.style.alignItems = "stretch";
+      if (resumeContentNode) {
+        const pageMargin = 24;
+        resumeContentNode.style.width = `${exportWidth}px`;
+        resumeContentNode.style.maxWidth = `${exportWidth}px`;
+        resumeContentNode.style.margin = "0 auto";
+        resumeContentNode.style.boxSizing = "border-box";
+        resumeContentNode.style.paddingLeft = `${pageMargin}px`;
+        resumeContentNode.style.paddingRight = `${pageMargin}px`;
+        resumeContentNode.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
+        resumeContentNode.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
+        resumeContentNode.style.position = "relative";
+        resumeContentNode.style.left = "0";
+        resumeContentNode.style.right = "0";
+        resumeContentNode.style.transform = "none";
+        resumeContentNode.style.transformOrigin = "top center";
+        resumeContentNode.style.fontSize = "";
+      }
+      if (resumeContentNode) {
+        const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
+        resumeContentNode.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
       }
 
       const module = await import("html2pdf.js");
       const html2pdf = (module.default ?? module) as any;
       await html2pdf()
         .set({
-          margin: [10, 10, 10, 10],
+          margin: [0, 0, 0, 0],
           filename: `${resume.header.fullName || "improved-resume"}.pdf`,
-          image: { type: "jpeg", quality: 0.98 },
+          image: { type: "png", quality: 1 },
           html2canvas: {
-            scale: 2,
+            scale: 3,
             useCORS: true,
             width: exportWidth,
             windowWidth: exportWidth,
+            height: a4HeightPx,
             windowHeight: Math.max(contentHeight, a4HeightPx),
+            scrollX: 0,
+            scrollY: 0,
+            x: 0,
+            y: 0,
             onclone: (doc: Document) => {
               const clonedRoot = doc.querySelector("[data-export-root='resume-preview']") as HTMLElement | null;
               if (!clonedRoot) return;
+              clonedRoot.style.minHeight = `${a4HeightPx}px`;
+              clonedRoot.style.display = "flex";
+              clonedRoot.style.flexDirection = "column";
+              clonedRoot.style.justifyContent = "flex-start";
+              clonedRoot.style.alignItems = "center";
+              clonedRoot.style.boxSizing = "border-box";
+              clonedRoot.style.width = "100%";
+              clonedRoot.style.maxWidth = "100%";
+              clonedRoot.style.margin = "0";
+              clonedRoot.style.padding = "0";
+              const clonedContent = clonedRoot.firstElementChild as HTMLElement | null;
+              if (clonedContent) {
+                const pageMargin = 24;
+                clonedContent.style.width = `${exportWidth}px`;
+                clonedContent.style.maxWidth = `${exportWidth}px`;
+                clonedContent.style.margin = "0 auto";
+                clonedContent.style.boxSizing = "border-box";
+                clonedContent.style.paddingLeft = `${pageMargin}px`;
+                clonedContent.style.paddingRight = `${pageMargin}px`;
+                clonedContent.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
+                clonedContent.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
+                clonedContent.style.position = "relative";
+                clonedContent.style.left = "0";
+                clonedContent.style.right = "0";
+                clonedContent.style.transform = "none";
+                clonedContent.style.transformOrigin = "top center";
+                clonedContent.style.fontSize = "";
+                const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
+                clonedContent.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
+              }
               const view = doc.defaultView;
               const nodes = [clonedRoot, ...Array.from(clonedRoot.querySelectorAll("*"))] as HTMLElement[];
               nodes.forEach((node) => {
@@ -784,7 +906,7 @@ export default function ResumeBuilder() {
               });
             },
           },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
           pagebreak: { mode: ["avoid-all", "css", "legacy"] },
         })
         .from(previewRef.current)
@@ -796,6 +918,7 @@ export default function ResumeBuilder() {
       }
       setPageError(message);
     } finally {
+      stopAutoScroll();
       if (previewRef.current) {
         const sourceNode = previewRef.current;
         sourceNode.style.width = "";
@@ -806,6 +929,26 @@ export default function ResumeBuilder() {
         sourceNode.style.boxSizing = "";
         sourceNode.style.transform = "";
         sourceNode.style.transformOrigin = "";
+        sourceNode.style.minHeight = "";
+        sourceNode.style.display = "";
+        sourceNode.style.flexDirection = "";
+        sourceNode.style.justifyContent = "";
+        sourceNode.style.alignItems = "";
+        if (resumeContentNode && previousContentStyles) {
+          resumeContentNode.style.width = previousContentStyles.width;
+          resumeContentNode.style.maxWidth = previousContentStyles.maxWidth;
+          resumeContentNode.style.margin = previousContentStyles.margin;
+          resumeContentNode.style.paddingLeft = previousContentStyles.paddingLeft;
+          resumeContentNode.style.paddingRight = previousContentStyles.paddingRight;
+          resumeContentNode.style.paddingTop = previousContentStyles.paddingTop;
+          resumeContentNode.style.paddingBottom = previousContentStyles.paddingBottom;
+          resumeContentNode.style.position = previousContentStyles.position;
+          resumeContentNode.style.left = previousContentStyles.left;
+          resumeContentNode.style.right = previousContentStyles.right;
+          resumeContentNode.style.transform = previousContentStyles.transform;
+          resumeContentNode.style.transformOrigin = previousContentStyles.transformOrigin;
+          resumeContentNode.style.fontSize = previousContentStyles.fontSize;
+        }
       }
       setIsDownloading(false);
     }
@@ -1158,7 +1301,10 @@ export default function ResumeBuilder() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit">
+          <div
+            ref={previewScrollRef}
+            className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit"
+          >
             <div className="relative">
               {isImproving && !isTyping && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl">
@@ -1176,7 +1322,7 @@ export default function ResumeBuilder() {
                 ref={previewRef}
                 data-export-root="resume-preview"
                 style={exportSafeColorVars}
-                className="mx-auto bg-white text-black max-w-198.5"
+                className="mx-auto bg-white text-black max-w-[595px]"
               >
                 <ResumeRenderer
                   selectedTemplate={selectedTemplate}

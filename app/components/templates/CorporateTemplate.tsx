@@ -55,10 +55,10 @@ export default function CorporateTemplate({ data, customization }: TemplateProps
 
   return (
     <article
-      className={`bg-white text-black box-border w-full max-w-198.5 p-10 mx-auto ${spacing}`}
+      className={`bg-white text-black box-border w-full max-w-[595px] p-2 mx-auto ${spacing}`}
       style={{ fontFamily: customization.fontFamily }}
     >
-      <header className="grid grid-cols-[1fr_auto] gap-4 border-b-2 pb-4" style={{ borderColor: customization.themeColor }}>
+      <header className="grid grid-cols-[1fr_auto] gap-2 border-b-2 pb-4" style={{ borderColor: customization.themeColor }}>
         <div>
           <div className="text-3xl font-extrabold text-black">{data.header.name}</div>
           {data.header.title && <p className="text-sm mt-1">{data.header.title}</p>}

@@ -56,19 +56,10 @@ export default function PhotoProTemplate({ data, customization }: TemplateProps)
 
   return (
     <article
-      className={`bg-white text-black box-border w-full max-w-198.5 p-10 mx-auto ${spacing}`}
+      className={`bg-white text-black box-border w-full max-w-[595px] p-2 mx-auto ${spacing}`}
       style={{ fontFamily: customization.fontFamily }}
     >
-      <header className="grid grid-cols-[1fr_auto] gap-6 border-b pb-4" style={{ borderColor: customization.themeColor }}>
-        <div>
-          <p className="text-4xl font-black tracking-tight">{data.header.name}</p>
-          {data.header.title && <p className="text-sm mt-2">{data.header.title}</p>}
-          <p className="text-sm mt-2">
-            {[data.header.email, data.header.phone, data.header.location, data.header.linkedin, data.header.portfolio]
-              .filter(Boolean)
-              .join(" | ")}
-          </p>
-        </div>
+      <header className="grid grid-cols-[auto_1fr] items-center gap-2 border-b pb-4" style={{ borderColor: customization.themeColor }}>
         {photoDataUrl ? (
           <img
             src={photoDataUrl}
@@ -84,102 +75,131 @@ export default function PhotoProTemplate({ data, customization }: TemplateProps)
             NO PHOTO
           </div>
         )}
+        <div className="text-center">
+          <p className="text-4xl font-semibold tracking-[0.18em]">{data.header.name}</p>
+          {data.header.title && <p className="text-xs mt-2 uppercase tracking-[0.2em]">{data.header.title}</p>}
+        </div>
       </header>
 
-      {!isHidden("summary") && (
-        <section>
-        <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-          Summary
-        </h2>
-        <p className="text-sm mt-2 leading-6">{data.summary}</p>
-        </section>
-      )}
-
-      {!isHidden("experience") && (
-        <section>
-        <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-          Experience
-        </h2>
-        <div className="mt-2 space-y-3">
-          {data.experience.map((item, index) => (
-            <div key={`${item.company}-${index}`}>
-              <div className="flex justify-between gap-2 flex-wrap">
-                <p className="font-semibold text-sm">{item.title} {item.company ? `| ${item.company}` : ""}</p>
-                <p className="text-sm">{item.duration}</p>
-              </div>
-              <ul className="list-disc ml-5 mt-1 text-sm leading-6">
-                {item.bullets.map((bullet, bulletIndex) => (
-                  <li key={`${index}-${bulletIndex}`}>{bullet}</li>
-                ))}
+      <div className="grid grid-cols-[1fr_2fr] gap-2 pt-4">
+        <aside className="pr-6 border-r" style={{ borderColor: customization.themeColor }}>
+          <div className={spacing}>
+            <section>
+              <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                Contact
+              </h2>
+              <ul className="mt-2 space-y-1 text-sm leading-6">
+                {data.header.phone && <li>{data.header.phone}</li>}
+                {data.header.email && <li>{data.header.email}</li>}
+                {data.header.location && <li>{data.header.location}</li>}
+                {data.header.linkedin && <li>{data.header.linkedin}</li>}
+                {data.header.portfolio && <li>{data.header.portfolio}</li>}
               </ul>
-            </div>
-          ))}
-        </div>
-        </section>
-      )}
+            </section>
 
-      {!isHidden("projects") && projects.length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-            Projects
-          </h2>
-          <div className="mt-2 space-y-3">
-            {projects.map((project, index) => (
-              <div key={`${project.title || "project"}-${index}`}>
-                {project.title && <p className="font-semibold text-sm">{project.title}</p>}
-                {project.description && <p className="text-sm mt-1 leading-6">{project.description}</p>}
-                {project.technologies.length > 0 && (
-                  <p className="text-xs mt-1 text-gray-700">
-                    {project.technologies.join(" | ")}
-                  </p>
-                )}
-                {project.bullets.length > 0 && (
-                  <ul className="list-disc ml-5 mt-1 text-sm leading-6">
-                    {project.bullets.map((bullet, bulletIndex) => (
-                      <li key={`${index}-${bulletIndex}`}>{bullet}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
+            {!isHidden("education") && educationLines.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                  Education
+                </h2>
+                <ul className="mt-2 space-y-1 text-sm leading-6">
+                  {educationLines.map((line, index) => (
+                    <li key={`${line}-${index}`}>{line}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {!isHidden("skills") && data.skills.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                  Skills
+                </h2>
+                <ul className="mt-2 space-y-1 text-sm leading-6">
+                  {data.skills.map((skill, index) => (
+                    <li key={`${skill}-${index}`}>{skill}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {!isHidden("certifications") && certifications.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                  Certifications
+                </h2>
+                <ul className="mt-2 space-y-1 text-sm leading-6">
+                  {certifications.map((cert, index) => (
+                    <li key={`${cert}-${index}`}>{cert}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </div>
-        </section>
-      )}
+        </aside>
 
-      {!isHidden("skills") && (
-        <section>
-        <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-          Skills
-        </h2>
-        <p className="text-sm mt-2">{data.skills.join(" | ")}</p>
-        </section>
-      )}
+        <div className={`pl-6 ${spacing}`}>
+          {!isHidden("summary") && (
+            <section>
+              <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                Summary
+              </h2>
+              <p className="text-sm mt-2 leading-6">{data.summary}</p>
+            </section>
+          )}
 
-      {!isHidden("education") && educationLines.length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-            Education
-          </h2>
-          <ul className="list-disc ml-5 mt-2 text-sm leading-6">
-            {educationLines.map((line, index) => (
-              <li key={`${line}-${index}`}>{line}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {!isHidden("experience") && (
+            <section>
+              <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                Experience
+              </h2>
+              <div className="mt-2 space-y-3">
+                {data.experience.map((item, index) => (
+                  <div key={`${item.company}-${index}`}>
+                    <div className="flex justify-between gap-2 flex-wrap">
+                      <p className="font-semibold text-sm">{item.title} {item.company ? `| ${item.company}` : ""}</p>
+                      <p className="text-sm">{item.duration}</p>
+                    </div>
+                    <ul className="list-disc ml-5 mt-1 text-sm leading-6">
+                      {item.bullets.map((bullet, bulletIndex) => (
+                        <li key={`${index}-${bulletIndex}`}>{bullet}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
-      {!isHidden("certifications") && certifications.length > 0 && (
-        <section>
-          <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
-            Certifications
-          </h2>
-          <ul className="list-disc ml-5 mt-2 text-sm leading-6">
-            {certifications.map((cert, index) => (
-              <li key={`${cert}-${index}`}>{cert}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+          {!isHidden("projects") && projects.length > 0 && (
+            <section>
+              <h2 className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: customization.themeColor }}>
+                Projects
+              </h2>
+              <div className="mt-2 space-y-3">
+                {projects.map((project, index) => (
+                  <div key={`${project.title || "project"}-${index}`}>
+                    {project.title && <p className="font-semibold text-sm">{project.title}</p>}
+                    {project.description && <p className="text-sm mt-1 leading-6">{project.description}</p>}
+                    {project.technologies.length > 0 && (
+                      <p className="text-xs mt-1 text-gray-700">
+                        {project.technologies.join(" | ")}
+                      </p>
+                    )}
+                    {project.bullets.length > 0 && (
+                      <ul className="list-disc ml-5 mt-1 text-sm leading-6">
+                        {project.bullets.map((bullet, bulletIndex) => (
+                          <li key={`${index}-${bulletIndex}`}>{bullet}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
