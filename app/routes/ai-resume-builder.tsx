@@ -715,38 +715,39 @@ Rules:
     );
     const fitScale = Math.min(1, a4HeightPx / contentHeight);
     const baseScale = 1;
-    const previousStyles = {
-      width: sourceNode.style.width,
-      maxWidth: sourceNode.style.maxWidth,
-      margin: sourceNode.style.margin,
-      padding: sourceNode.style.padding,
-      backgroundColor: sourceNode.style.backgroundColor,
-      boxSizing: sourceNode.style.boxSizing,
-      transform: sourceNode.style.transform,
-      transformOrigin: sourceNode.style.transformOrigin,
-      minHeight: sourceNode.style.minHeight,
-      display: sourceNode.style.display,
-      flexDirection: sourceNode.style.flexDirection,
-      justifyContent: sourceNode.style.justifyContent,
-      alignItems: sourceNode.style.alignItems,
+    
+    // Capture complete state: both inline styles AND computed styles
+    const previousSourceStyle = sourceNode.getAttribute('style') || '';
+    const previousContentStyle = resumeContentNode ? (resumeContentNode.getAttribute('style') || '') : null;
+    const sourceComputedStyle = window.getComputedStyle(sourceNode);
+    const sourceComputedState = {
+      width: sourceComputedStyle.width,
+      maxWidth: sourceComputedStyle.maxWidth,
+      margin: sourceComputedStyle.margin,
+      padding: sourceComputedStyle.padding,
+      backgroundColor: sourceComputedStyle.backgroundColor,
+      boxSizing: sourceComputedStyle.boxSizing,
+      transform: sourceComputedStyle.transform,
+      transformOrigin: sourceComputedStyle.transformOrigin,
+      minHeight: sourceComputedStyle.minHeight,
+      display: sourceComputedStyle.display,
+      flexDirection: sourceComputedStyle.flexDirection,
+      justifyContent: sourceComputedStyle.justifyContent,
+      alignItems: sourceComputedStyle.alignItems,
     };
-    const previousContentStyles = resumeContentNode
-      ? {
-          width: resumeContentNode.style.width,
-          maxWidth: resumeContentNode.style.maxWidth,
-          margin: resumeContentNode.style.margin,
-          paddingLeft: resumeContentNode.style.paddingLeft,
-          paddingRight: resumeContentNode.style.paddingRight,
-          paddingTop: resumeContentNode.style.paddingTop,
-          paddingBottom: resumeContentNode.style.paddingBottom,
-          position: resumeContentNode.style.position,
-          left: resumeContentNode.style.left,
-          right: resumeContentNode.style.right,
-          transform: resumeContentNode.style.transform,
-          transformOrigin: resumeContentNode.style.transformOrigin,
-          fontSize: resumeContentNode.style.fontSize,
-        }
-      : null;
+    const contentComputedStyle = resumeContentNode ? window.getComputedStyle(resumeContentNode) : null;
+    const contentComputedState = contentComputedStyle ? {
+      width: contentComputedStyle.width,
+      maxWidth: contentComputedStyle.maxWidth,
+      margin: contentComputedStyle.margin,
+      padding: contentComputedStyle.padding,
+      position: contentComputedStyle.position,
+      left: contentComputedStyle.left,
+      right: contentComputedStyle.right,
+      transform: contentComputedStyle.transform,
+      transformOrigin: contentComputedStyle.transformOrigin,
+      fontSize: contentComputedStyle.fontSize,
+    } : null;
     try {
       if (typeof document !== "undefined" && "fonts" in document) {
         await (document as Document & { fonts: { ready: Promise<void> } }).fonts.ready;
@@ -852,33 +853,48 @@ Rules:
       setError(err instanceof Error ? err.message : "PDF generation failed");
     } finally {
       stopAutoScroll();
-      sourceNode.style.width = previousStyles.width;
-      sourceNode.style.maxWidth = previousStyles.maxWidth;
-      sourceNode.style.margin = previousStyles.margin;
-      sourceNode.style.padding = previousStyles.padding;
-      sourceNode.style.backgroundColor = previousStyles.backgroundColor;
-      sourceNode.style.boxSizing = previousStyles.boxSizing;
-      sourceNode.style.transform = previousStyles.transform;
-      sourceNode.style.transformOrigin = previousStyles.transformOrigin;
-      sourceNode.style.minHeight = previousStyles.minHeight;
-      sourceNode.style.display = previousStyles.display;
-      sourceNode.style.flexDirection = previousStyles.flexDirection;
-      sourceNode.style.justifyContent = previousStyles.justifyContent;
-      sourceNode.style.alignItems = previousStyles.alignItems;
-      if (resumeContentNode && previousContentStyles) {
-        resumeContentNode.style.width = previousContentStyles.width;
-        resumeContentNode.style.maxWidth = previousContentStyles.maxWidth;
-        resumeContentNode.style.margin = previousContentStyles.margin;
-        resumeContentNode.style.paddingLeft = previousContentStyles.paddingLeft;
-        resumeContentNode.style.paddingRight = previousContentStyles.paddingRight;
-        resumeContentNode.style.paddingTop = previousContentStyles.paddingTop;
-        resumeContentNode.style.paddingBottom = previousContentStyles.paddingBottom;
-        resumeContentNode.style.position = previousContentStyles.position;
-        resumeContentNode.style.left = previousContentStyles.left;
-        resumeContentNode.style.right = previousContentStyles.right;
-        resumeContentNode.style.transform = previousContentStyles.transform;
-        resumeContentNode.style.transformOrigin = previousContentStyles.transformOrigin;
-        resumeContentNode.style.fontSize = previousContentStyles.fontSize;
+      // Restore both inline styles AND reapply computed styles to match original state perfectly
+      if (previousSourceStyle) {
+        sourceNode.setAttribute('style', previousSourceStyle);
+      } else {
+        sourceNode.removeAttribute('style');
+      }
+      // Force reflow and then apply computed styles to ensure proper restoration
+      void sourceNode.offsetHeight;
+      Object.assign(sourceNode.style, {
+        width: sourceComputedState.width,
+        maxWidth: sourceComputedState.maxWidth,
+        margin: sourceComputedState.margin,
+        padding: sourceComputedState.padding,
+        backgroundColor: sourceComputedState.backgroundColor,
+        boxSizing: sourceComputedState.boxSizing,
+        transform: sourceComputedState.transform,
+        transformOrigin: sourceComputedState.transformOrigin,
+        minHeight: sourceComputedState.minHeight,
+        display: sourceComputedState.display,
+        flexDirection: sourceComputedState.flexDirection,
+        justifyContent: sourceComputedState.justifyContent,
+        alignItems: sourceComputedState.alignItems,
+      });
+      if (resumeContentNode && previousContentStyle !== null && contentComputedState) {
+        if (previousContentStyle) {
+          resumeContentNode.setAttribute('style', previousContentStyle);
+        } else {
+          resumeContentNode.removeAttribute('style');
+        }
+        void resumeContentNode.offsetHeight;
+        Object.assign(resumeContentNode.style, {
+          width: contentComputedState.width,
+          maxWidth: contentComputedState.maxWidth,
+          margin: contentComputedState.margin,
+          padding: contentComputedState.padding,
+          position: contentComputedState.position,
+          left: contentComputedState.left,
+          right: contentComputedState.right,
+          transform: contentComputedState.transform,
+          transformOrigin: contentComputedState.transformOrigin,
+          fontSize: contentComputedState.fontSize,
+        });
       }
       setIsDownloading(false);
     }
@@ -948,7 +964,7 @@ Rules:
           </div>
         )}
 
-        <section className="grid grid-cols-1 xl:grid-cols-[460px_1fr] gap-4">
+        <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
             <h2 className="text-xl text-black! font-bold">Build Resume with AI</h2>
 
@@ -1341,7 +1357,7 @@ Rules:
 
             <div
               ref={previewScrollRef}
-              className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto"
+              className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit"
             >
               <div className="relative">
                 {isBuilding && !isTyping && (
@@ -1360,7 +1376,7 @@ Rules:
                   ref={previewRef}
                   data-export-root="resume-preview"
                   style={exportSafeColorVars}
-                  className="mx-auto w-full max-w-148.75"
+                  className="mx-auto bg-white text-black max-w-148.75"
                 >
                   <ResumeRenderer
                     selectedTemplate={selectedTemplate}

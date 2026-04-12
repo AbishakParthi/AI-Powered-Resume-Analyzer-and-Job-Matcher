@@ -787,7 +787,10 @@ export default function ResumeBuilder() {
     setPageError("");
     let stopAutoScroll = () => {};
     let resumeContentNode: HTMLElement | null = null;
-    let previousContentStyles: any = null;
+    let previousSourceStyle = '';
+    let previousContentStyle: string | null = null;
+    let sourceComputedState: any = null;
+    let contentComputedState: any = null;
     try {
       const sourceNode = previewRef.current;
       stopAutoScroll = startAutoScroll(sourceNode);
@@ -801,38 +804,39 @@ export default function ResumeBuilder() {
       );
       const fitScale = Math.min(1, a4HeightPx / contentHeight);
       const baseScale = 1;
-      const previousStyles = {
-        width: sourceNode.style.width,
-        maxWidth: sourceNode.style.maxWidth,
-        margin: sourceNode.style.margin,
-        padding: sourceNode.style.padding,
-        backgroundColor: sourceNode.style.backgroundColor,
-        boxSizing: sourceNode.style.boxSizing,
-        transform: sourceNode.style.transform,
-        transformOrigin: sourceNode.style.transformOrigin,
-        minHeight: sourceNode.style.minHeight,
-        display: sourceNode.style.display,
-        flexDirection: sourceNode.style.flexDirection,
-        justifyContent: sourceNode.style.justifyContent,
-        alignItems: sourceNode.style.alignItems,
+      
+      // Capture complete state: both inline styles AND computed styles
+      previousSourceStyle = sourceNode.getAttribute('style') || '';
+      previousContentStyle = resumeContentNode ? (resumeContentNode.getAttribute('style') || '') : null;
+      const computedSource = window.getComputedStyle(sourceNode);
+      sourceComputedState = {
+        width: computedSource.width,
+        maxWidth: computedSource.maxWidth,
+        margin: computedSource.margin,
+        padding: computedSource.padding,
+        backgroundColor: computedSource.backgroundColor,
+        boxSizing: computedSource.boxSizing,
+        transform: computedSource.transform,
+        transformOrigin: computedSource.transformOrigin,
+        minHeight: computedSource.minHeight,
+        display: computedSource.display,
+        flexDirection: computedSource.flexDirection,
+        justifyContent: computedSource.justifyContent,
+        alignItems: computedSource.alignItems,
       };
-      previousContentStyles = resumeContentNode
-        ? {
-            width: resumeContentNode.style.width,
-            maxWidth: resumeContentNode.style.maxWidth,
-            margin: resumeContentNode.style.margin,
-            paddingLeft: resumeContentNode.style.paddingLeft,
-            paddingRight: resumeContentNode.style.paddingRight,
-            paddingTop: resumeContentNode.style.paddingTop,
-            paddingBottom: resumeContentNode.style.paddingBottom,
-            position: resumeContentNode.style.position,
-            left: resumeContentNode.style.left,
-            right: resumeContentNode.style.right,
-            transform: resumeContentNode.style.transform,
-            transformOrigin: resumeContentNode.style.transformOrigin,
-            fontSize: resumeContentNode.style.fontSize,
-          }
-        : null;
+      const computedContent = resumeContentNode ? window.getComputedStyle(resumeContentNode) : null;
+      contentComputedState = computedContent ? {
+        width: computedContent.width,
+        maxWidth: computedContent.maxWidth,
+        margin: computedContent.margin,
+        padding: computedContent.padding,
+        position: computedContent.position,
+        left: computedContent.left,
+        right: computedContent.right,
+        transform: computedContent.transform,
+        transformOrigin: computedContent.transformOrigin,
+        fontSize: computedContent.fontSize,
+      } : null;
 
       // Force stable print dimensions during capture.
       sourceNode.style.width = "100%";
@@ -949,37 +953,53 @@ export default function ResumeBuilder() {
       stopAutoScroll();
       if (previewRef.current) {
         const sourceNode = previewRef.current;
-        sourceNode.style.width = "";
-        sourceNode.style.maxWidth = "";
-        sourceNode.style.margin = "";
-        sourceNode.style.padding = "";
-        sourceNode.style.backgroundColor = "";
-        sourceNode.style.boxSizing = "";
-        sourceNode.style.transform = "";
-        sourceNode.style.transformOrigin = "";
-        sourceNode.style.minHeight = "";
-        sourceNode.style.display = "";
-        sourceNode.style.flexDirection = "";
-        sourceNode.style.justifyContent = "";
-        sourceNode.style.alignItems = "";
-        if (resumeContentNode && previousContentStyles) {
-          resumeContentNode.style.width = previousContentStyles.width;
-          resumeContentNode.style.maxWidth = previousContentStyles.maxWidth;
-          resumeContentNode.style.margin = previousContentStyles.margin;
-          resumeContentNode.style.paddingLeft = previousContentStyles.paddingLeft;
-          resumeContentNode.style.paddingRight = previousContentStyles.paddingRight;
-          resumeContentNode.style.paddingTop = previousContentStyles.paddingTop;
-          resumeContentNode.style.paddingBottom = previousContentStyles.paddingBottom;
-          resumeContentNode.style.position = previousContentStyles.position;
-          resumeContentNode.style.left = previousContentStyles.left;
-          resumeContentNode.style.right = previousContentStyles.right;
-          resumeContentNode.style.transform = previousContentStyles.transform;
-          resumeContentNode.style.transformOrigin = previousContentStyles.transformOrigin;
-          resumeContentNode.style.fontSize = previousContentStyles.fontSize;
+        // Restore both inline styles AND reapply computed styles to match original state perfectly
+        if (previousSourceStyle) {
+          sourceNode.setAttribute('style', previousSourceStyle);
+        } else {
+          sourceNode.removeAttribute('style');
+        }
+        // Force reflow and then apply computed styles to ensure proper restoration
+        void sourceNode.offsetHeight;
+        if (sourceComputedState) {
+          Object.assign(sourceNode.style, {
+            width: sourceComputedState.width,
+            maxWidth: sourceComputedState.maxWidth,
+            margin: sourceComputedState.margin,
+            padding: sourceComputedState.padding,
+            backgroundColor: sourceComputedState.backgroundColor,
+            boxSizing: sourceComputedState.boxSizing,
+            transform: sourceComputedState.transform,
+            transformOrigin: sourceComputedState.transformOrigin,
+            minHeight: sourceComputedState.minHeight,
+            display: sourceComputedState.display,
+            flexDirection: sourceComputedState.flexDirection,
+            justifyContent: sourceComputedState.justifyContent,
+            alignItems: sourceComputedState.alignItems,
+          });
+        }
+        if (resumeContentNode && previousContentStyle !== null && contentComputedState) {
+          if (previousContentStyle) {
+            resumeContentNode.setAttribute('style', previousContentStyle);
+          } else {
+            resumeContentNode.removeAttribute('style');
+          }
+          void resumeContentNode.offsetHeight;
+          Object.assign(resumeContentNode.style, {
+            width: contentComputedState.width,
+            maxWidth: contentComputedState.maxWidth,
+            margin: contentComputedState.margin,
+            padding: contentComputedState.padding,
+            position: contentComputedState.position,
+            left: contentComputedState.left,
+            right: contentComputedState.right,
+            transform: contentComputedState.transform,
+            transformOrigin: contentComputedState.transformOrigin,
+            fontSize: contentComputedState.fontSize,
+          });
         }
       }
-      // Add delay to ensure download is initiated before resetting loading state
-      window.setTimeout(() => setIsDownloading(false), 1000);
+      setIsDownloading(false);
     }
   };
 
