@@ -785,18 +785,11 @@ export default function ResumeBuilder() {
     if (!previewRef.current) return;
     setIsDownloading(true);
     setPageError("");
-    let stopAutoScroll = () => {};
-    let resumeContentNode: HTMLElement | null = null;
-    let previousSourceStyle = '';
-    let previousContentStyle: string | null = null;
-    let sourceComputedState: any = null;
-    let contentComputedState: any = null;
     try {
       const sourceNode = previewRef.current;
-      stopAutoScroll = startAutoScroll(sourceNode);
       const exportWidth = 794;
       const a4HeightPx = Math.round(exportWidth * (297 / 210));
-      resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
+      const resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
       const contentHeight = Math.max(
         sourceNode.scrollHeight,
         sourceNode.clientHeight,
@@ -804,73 +797,6 @@ export default function ResumeBuilder() {
       );
       const fitScale = Math.min(1, a4HeightPx / contentHeight);
       const baseScale = 1;
-      
-      // Capture complete state: both inline styles AND computed styles
-      previousSourceStyle = sourceNode.getAttribute('style') || '';
-      previousContentStyle = resumeContentNode ? (resumeContentNode.getAttribute('style') || '') : null;
-      const computedSource = window.getComputedStyle(sourceNode);
-      sourceComputedState = {
-        width: computedSource.width,
-        maxWidth: computedSource.maxWidth,
-        margin: computedSource.margin,
-        padding: computedSource.padding,
-        backgroundColor: computedSource.backgroundColor,
-        boxSizing: computedSource.boxSizing,
-        transform: computedSource.transform,
-        transformOrigin: computedSource.transformOrigin,
-        minHeight: computedSource.minHeight,
-        display: computedSource.display,
-        flexDirection: computedSource.flexDirection,
-        justifyContent: computedSource.justifyContent,
-        alignItems: computedSource.alignItems,
-      };
-      const computedContent = resumeContentNode ? window.getComputedStyle(resumeContentNode) : null;
-      contentComputedState = computedContent ? {
-        width: computedContent.width,
-        maxWidth: computedContent.maxWidth,
-        margin: computedContent.margin,
-        padding: computedContent.padding,
-        position: computedContent.position,
-        left: computedContent.left,
-        right: computedContent.right,
-        transform: computedContent.transform,
-        transformOrigin: computedContent.transformOrigin,
-        fontSize: computedContent.fontSize,
-      } : null;
-
-      // Force stable print dimensions during capture.
-      sourceNode.style.width = "100%";
-      sourceNode.style.maxWidth = "100%";
-      sourceNode.style.margin = "0";
-      sourceNode.style.padding = "0";
-      sourceNode.style.backgroundColor = "#ffffff";
-      sourceNode.style.boxSizing = "border-box";
-      sourceNode.style.minHeight = `${a4HeightPx}px`;
-      sourceNode.style.display = "flex";
-      sourceNode.style.flexDirection = "column";
-      sourceNode.style.justifyContent = "flex-start";
-      sourceNode.style.alignItems = "stretch";
-      if (resumeContentNode) {
-        const pageMargin = 24;
-        resumeContentNode.style.width = `${exportWidth}px`;
-        resumeContentNode.style.maxWidth = `${exportWidth}px`;
-        resumeContentNode.style.margin = "0 auto";
-        resumeContentNode.style.boxSizing = "border-box";
-        resumeContentNode.style.paddingLeft = `${pageMargin}px`;
-        resumeContentNode.style.paddingRight = `${pageMargin}px`;
-        resumeContentNode.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
-        resumeContentNode.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
-        resumeContentNode.style.position = "relative";
-        resumeContentNode.style.left = "0";
-        resumeContentNode.style.right = "0";
-        resumeContentNode.style.transform = "none";
-        resumeContentNode.style.transformOrigin = "top center";
-        resumeContentNode.style.fontSize = "";
-      }
-      if (resumeContentNode) {
-        const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
-        resumeContentNode.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
-      }
 
       const module = await import("html2pdf.js");
       const html2pdf = (module.default ?? module) as any;
@@ -891,22 +817,19 @@ export default function ResumeBuilder() {
             x: 0,
             y: 0,
             onclone: (doc: Document) => {
-              const clonedRoot = doc.querySelector("[data-export-root='resume-preview']") as HTMLElement | null;
+              const clonedRoot = doc.querySelector(
+                "[data-export-root='resume-preview']"
+              ) as HTMLElement | null;
               if (!clonedRoot) return;
-              clonedRoot.style.minHeight = `${a4HeightPx}px`;
-              clonedRoot.style.display = "flex";
-              clonedRoot.style.flexDirection = "column";
-              clonedRoot.style.justifyContent = "flex-start";
-              clonedRoot.style.alignItems = "center";
+              clonedRoot.style.display = "block";
               clonedRoot.style.boxSizing = "border-box";
-              clonedRoot.style.width = "100%";
-              clonedRoot.style.maxWidth = "100%";
-              clonedRoot.style.margin = "0";
+              clonedRoot.style.margin = "0 auto";
               clonedRoot.style.padding = "0";
               const clonedContent = clonedRoot.firstElementChild as HTMLElement | null;
               if (clonedContent) {
                 const pageMargin = 24;
                 clonedContent.style.width = `${exportWidth}px`;
+                clonedContent.style.minWidth = `${exportWidth}px`;
                 clonedContent.style.maxWidth = `${exportWidth}px`;
                 clonedContent.style.margin = "0 auto";
                 clonedContent.style.boxSizing = "border-box";
@@ -915,16 +838,14 @@ export default function ResumeBuilder() {
                 clonedContent.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
                 clonedContent.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
                 clonedContent.style.position = "relative";
-                clonedContent.style.left = "0";
-                clonedContent.style.right = "0";
-                clonedContent.style.transform = "none";
-                clonedContent.style.transformOrigin = "top center";
-                clonedContent.style.fontSize = "";
-                const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
-                clonedContent.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
+                clonedContent.style.left = "auto";
+                clonedContent.style.right = "auto";
               }
               const view = doc.defaultView;
-              const nodes = [clonedRoot, ...Array.from(clonedRoot.querySelectorAll("*"))] as HTMLElement[];
+              const nodes = [
+                clonedRoot,
+                ...Array.from(clonedRoot.querySelectorAll("*")),
+              ] as HTMLElement[];
               nodes.forEach((node) => {
                 node.style.filter = "none";
                 node.style.backdropFilter = "none";
@@ -940,65 +861,16 @@ export default function ResumeBuilder() {
         })
         .from(previewRef.current)
         .save();
-      
-      // Give browser time to process download before clearing loading state
-      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (error) {
       let message = error instanceof Error ? error.message : "PDF generation failed";
       if (message.includes("unsupported color function") && message.includes("oklch")) {
-        message = "PDF export failed due to an unsupported CSS color format. Refresh and try again.";
+        message =
+          "PDF export failed due to an unsupported CSS color format. Refresh and try again.";
       }
       setPageError(message);
     } finally {
-      stopAutoScroll();
-      if (previewRef.current) {
-        const sourceNode = previewRef.current;
-        // Restore both inline styles AND reapply computed styles to match original state perfectly
-        if (previousSourceStyle) {
-          sourceNode.setAttribute('style', previousSourceStyle);
-        } else {
-          sourceNode.removeAttribute('style');
-        }
-        // Force reflow and then apply computed styles to ensure proper restoration
-        void sourceNode.offsetHeight;
-        if (sourceComputedState) {
-          Object.assign(sourceNode.style, {
-            width: sourceComputedState.width,
-            maxWidth: sourceComputedState.maxWidth,
-            margin: sourceComputedState.margin,
-            padding: sourceComputedState.padding,
-            backgroundColor: sourceComputedState.backgroundColor,
-            boxSizing: sourceComputedState.boxSizing,
-            transform: sourceComputedState.transform,
-            transformOrigin: sourceComputedState.transformOrigin,
-            minHeight: sourceComputedState.minHeight,
-            display: sourceComputedState.display,
-            flexDirection: sourceComputedState.flexDirection,
-            justifyContent: sourceComputedState.justifyContent,
-            alignItems: sourceComputedState.alignItems,
-          });
-        }
-        if (resumeContentNode && previousContentStyle !== null && contentComputedState) {
-          if (previousContentStyle) {
-            resumeContentNode.setAttribute('style', previousContentStyle);
-          } else {
-            resumeContentNode.removeAttribute('style');
-          }
-          void resumeContentNode.offsetHeight;
-          Object.assign(resumeContentNode.style, {
-            width: contentComputedState.width,
-            maxWidth: contentComputedState.maxWidth,
-            margin: contentComputedState.margin,
-            padding: contentComputedState.padding,
-            position: contentComputedState.position,
-            left: contentComputedState.left,
-            right: contentComputedState.right,
-            transform: contentComputedState.transform,
-            transformOrigin: contentComputedState.transformOrigin,
-            fontSize: contentComputedState.fontSize,
-          });
-        }
-      }
       setIsDownloading(false);
     }
   };
@@ -1352,9 +1224,10 @@ export default function ResumeBuilder() {
 
           <div
             ref={previewScrollRef}
-            className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit"
+            className="bg-white rounded-2xl shadow-sm p-3 sm:p-8 overflow-auto h-fit max-h-screen"
+            style={{ WebkitOverflowScrolling: 'touch' }}
           >
-            <div className="relative">
+            <div className="relative min-h-fit">
               {isImproving && !isTyping && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-sm rounded-xl">
                   <div className="flex items-center gap-3 text-sm font-semibold text-gray-700">
@@ -1371,7 +1244,7 @@ export default function ResumeBuilder() {
                 ref={previewRef}
                 data-export-root="resume-preview"
                 style={exportSafeColorVars}
-                className="mx-auto bg-white text-black max-w-148.75"
+                className="mx-auto bg-white text-black max-w-148.75 w-full"
               >
                 <ResumeRenderer
                   selectedTemplate={selectedTemplate}

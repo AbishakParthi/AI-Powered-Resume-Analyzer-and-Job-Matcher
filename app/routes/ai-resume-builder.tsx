@@ -704,7 +704,6 @@ Rules:
     setIsDownloading(true);
     setError("");
     const sourceNode = previewRef.current;
-    const stopAutoScroll = startAutoScroll(sourceNode);
     const exportWidth = 794;
     const a4HeightPx = Math.round(exportWidth * (297 / 210));
     const resumeContentNode = sourceNode.firstElementChild as HTMLElement | null;
@@ -715,76 +714,9 @@ Rules:
     );
     const fitScale = Math.min(1, a4HeightPx / contentHeight);
     const baseScale = 1;
-    
-    // Capture complete state: both inline styles AND computed styles
-    const previousSourceStyle = sourceNode.getAttribute('style') || '';
-    const previousContentStyle = resumeContentNode ? (resumeContentNode.getAttribute('style') || '') : null;
-    const sourceComputedStyle = window.getComputedStyle(sourceNode);
-    const sourceComputedState = {
-      width: sourceComputedStyle.width,
-      maxWidth: sourceComputedStyle.maxWidth,
-      margin: sourceComputedStyle.margin,
-      padding: sourceComputedStyle.padding,
-      backgroundColor: sourceComputedStyle.backgroundColor,
-      boxSizing: sourceComputedStyle.boxSizing,
-      transform: sourceComputedStyle.transform,
-      transformOrigin: sourceComputedStyle.transformOrigin,
-      minHeight: sourceComputedStyle.minHeight,
-      display: sourceComputedStyle.display,
-      flexDirection: sourceComputedStyle.flexDirection,
-      justifyContent: sourceComputedStyle.justifyContent,
-      alignItems: sourceComputedStyle.alignItems,
-    };
-    const contentComputedStyle = resumeContentNode ? window.getComputedStyle(resumeContentNode) : null;
-    const contentComputedState = contentComputedStyle ? {
-      width: contentComputedStyle.width,
-      maxWidth: contentComputedStyle.maxWidth,
-      margin: contentComputedStyle.margin,
-      padding: contentComputedStyle.padding,
-      position: contentComputedStyle.position,
-      left: contentComputedStyle.left,
-      right: contentComputedStyle.right,
-      transform: contentComputedStyle.transform,
-      transformOrigin: contentComputedStyle.transformOrigin,
-      fontSize: contentComputedStyle.fontSize,
-    } : null;
     try {
       if (typeof document !== "undefined" && "fonts" in document) {
         await (document as Document & { fonts: { ready: Promise<void> } }).fonts.ready;
-      }
-
-      // Force stable print dimensions during capture.
-      sourceNode.style.width = "100%";
-      sourceNode.style.maxWidth = "100%";
-      sourceNode.style.margin = "0";
-      sourceNode.style.padding = "0";
-      sourceNode.style.backgroundColor = "#ffffff";
-      sourceNode.style.boxSizing = "border-box";
-      sourceNode.style.minHeight = `${a4HeightPx}px`;
-      sourceNode.style.display = "flex";
-      sourceNode.style.flexDirection = "column";
-      sourceNode.style.justifyContent = "flex-start";
-      sourceNode.style.alignItems = "stretch";
-      if (resumeContentNode) {
-        const pageMargin = 24;
-        resumeContentNode.style.width = `${exportWidth}px`;
-        resumeContentNode.style.maxWidth = `${exportWidth}px`;
-        resumeContentNode.style.margin = "0 auto";
-        resumeContentNode.style.boxSizing = "border-box";
-        resumeContentNode.style.paddingLeft = `${pageMargin}px`;
-        resumeContentNode.style.paddingRight = `${pageMargin}px`;
-        resumeContentNode.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
-        resumeContentNode.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
-        resumeContentNode.style.position = "relative";
-        resumeContentNode.style.left = "0";
-        resumeContentNode.style.right = "0";
-        resumeContentNode.style.transform = "none";
-        resumeContentNode.style.transformOrigin = "top center";
-        resumeContentNode.style.fontSize = "";
-      }
-      if (resumeContentNode) {
-        const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
-        resumeContentNode.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
       }
 
       const module = await import("html2pdf.js");
@@ -807,22 +739,19 @@ Rules:
             x: 0,
             y: 0,
             onclone: (doc: Document) => {
-              const clonedRoot = doc.querySelector("[data-export-root='resume-preview']") as HTMLElement | null;
+              const clonedRoot = doc.querySelector(
+                "[data-export-root='resume-preview']"
+              ) as HTMLElement | null;
               if (!clonedRoot) return;
-              clonedRoot.style.minHeight = `${a4HeightPx}px`;
-              clonedRoot.style.display = "flex";
-              clonedRoot.style.flexDirection = "column";
-              clonedRoot.style.justifyContent = "flex-start";
-              clonedRoot.style.alignItems = "center";
+              clonedRoot.style.display = "block";
               clonedRoot.style.boxSizing = "border-box";
-              clonedRoot.style.width = "100%";
-              clonedRoot.style.maxWidth = "100%";
-              clonedRoot.style.margin = "0";
+              clonedRoot.style.margin = "0 auto";
               clonedRoot.style.padding = "0";
               const clonedContent = clonedRoot.firstElementChild as HTMLElement | null;
               if (clonedContent) {
                 const pageMargin = 24;
                 clonedContent.style.width = `${exportWidth}px`;
+                clonedContent.style.minWidth = `${exportWidth}px`;
                 clonedContent.style.maxWidth = `${exportWidth}px`;
                 clonedContent.style.margin = "0 auto";
                 clonedContent.style.boxSizing = "border-box";
@@ -831,14 +760,22 @@ Rules:
                 clonedContent.style.paddingTop = `${Math.round(pageMargin * 0.75)}px`;
                 clonedContent.style.paddingBottom = `${Math.round(pageMargin * 0.75)}px`;
                 clonedContent.style.position = "relative";
-                clonedContent.style.left = "0";
-                clonedContent.style.right = "0";
-                clonedContent.style.transform = "none";
-                clonedContent.style.transformOrigin = "top center";
-                clonedContent.style.fontSize = "";
-                const appliedScale = fitScale < 1 ? fitScale * baseScale : baseScale;
-                clonedContent.style.transform = `scale(${Number(appliedScale.toFixed(3))})`;
+                clonedContent.style.left = "auto";
+                clonedContent.style.right = "auto";
               }
+              const view = doc.defaultView;
+              const nodes = [
+                clonedRoot,
+                ...Array.from(clonedRoot.querySelectorAll("*")),
+              ] as HTMLElement[];
+              nodes.forEach((node) => {
+                node.style.filter = "none";
+                node.style.backdropFilter = "none";
+                const computed = view?.getComputedStyle(node);
+                if (computed?.backgroundImage?.includes("gradient")) {
+                  node.style.backgroundImage = "none";
+                }
+              });
             },
           },
           jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
@@ -846,56 +783,11 @@ Rules:
         })
         .from(sourceNode)
         .save();
-      
-      // Give browser time to process download before clearing loading state
-      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch (err) {
       setError(err instanceof Error ? err.message : "PDF generation failed");
     } finally {
-      stopAutoScroll();
-      // Restore both inline styles AND reapply computed styles to match original state perfectly
-      if (previousSourceStyle) {
-        sourceNode.setAttribute('style', previousSourceStyle);
-      } else {
-        sourceNode.removeAttribute('style');
-      }
-      // Force reflow and then apply computed styles to ensure proper restoration
-      void sourceNode.offsetHeight;
-      Object.assign(sourceNode.style, {
-        width: sourceComputedState.width,
-        maxWidth: sourceComputedState.maxWidth,
-        margin: sourceComputedState.margin,
-        padding: sourceComputedState.padding,
-        backgroundColor: sourceComputedState.backgroundColor,
-        boxSizing: sourceComputedState.boxSizing,
-        transform: sourceComputedState.transform,
-        transformOrigin: sourceComputedState.transformOrigin,
-        minHeight: sourceComputedState.minHeight,
-        display: sourceComputedState.display,
-        flexDirection: sourceComputedState.flexDirection,
-        justifyContent: sourceComputedState.justifyContent,
-        alignItems: sourceComputedState.alignItems,
-      });
-      if (resumeContentNode && previousContentStyle !== null && contentComputedState) {
-        if (previousContentStyle) {
-          resumeContentNode.setAttribute('style', previousContentStyle);
-        } else {
-          resumeContentNode.removeAttribute('style');
-        }
-        void resumeContentNode.offsetHeight;
-        Object.assign(resumeContentNode.style, {
-          width: contentComputedState.width,
-          maxWidth: contentComputedState.maxWidth,
-          margin: contentComputedState.margin,
-          padding: contentComputedState.padding,
-          position: contentComputedState.position,
-          left: contentComputedState.left,
-          right: contentComputedState.right,
-          transform: contentComputedState.transform,
-          transformOrigin: contentComputedState.transformOrigin,
-          fontSize: contentComputedState.fontSize,
-        });
-      }
       setIsDownloading(false);
     }
   };
